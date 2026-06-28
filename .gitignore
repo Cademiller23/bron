@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
+.coverage
+.darwin/.env
+htmlcov/
+*.egg-info/
+build/
+dist/
+.DS_Store
+
+# secrets and envs — never commit
+.env
+.env.*
+**/.env
+.venv/
+**/.venv/
