@@ -1,12 +1,14 @@
-# Darwin — Supply-Chain Backend (Phases B1–B6)
+# Darwin — Supply-Chain Backend (Phases B1–B8)
 
-Six phases are built and frozen so far:
+Eight phases are built and frozen — **B1–B8 are the complete working brain**:
 - **B1 — the Problem Loader & Scorer** (`darwin/problem/`): the world + the judge.
 - **B2 — the Worker Agent** (`darwin/agent/`): the model-agnostic atom every team is built from. See [`darwin/agent/CONTRACT.md`](darwin/agent/CONTRACT.md).
 - **B3 — the Team Genome & Team Runner** (`darwin/team/`): the kitchen — a DAG of B2 atoms, mutated in place with optimistic locking, executed into one scored answer that's always a number and never an exception. See [`darwin/team/CONTRACT.md`](darwin/team/CONTRACT.md).
 - **B4 — the Architect** (`darwin/architect/`): the meta-agent that *designs* teams (it never solves the problem). See [`darwin/architect/CONTRACT.md`](darwin/architect/CONTRACT.md).
 - **B5 — the Rearrangement Loop** (`darwin/rearrange/`): the always-on inner loop that climbs the score by reshaping the team — always runs, never regresses. See [`darwin/rearrange/CONTRACT.md`](darwin/rearrange/CONTRACT.md).
 - **B6 — the Threshold Gate, Escalation & Conductor** (`darwin/escalation/`): the heavier outer loop and the top-level `Conductor.solve` entry point — grows the team (corpus reuse, then curation) only when rearrangement can't clear 0.90, keeps an added agent only if it helped, and gets better across problems via the agent corpus. See [`darwin/escalation/CONTRACT.md`](darwin/escalation/CONTRACT.md).
+- **B7 — Multi-Model Routing & the Model Registry** (`darwin/routing/`): the "model-aware" layer — a curated ~5-model fleet (FAST/MID/FRONTIER) behind one interface, `model_id` as an evolvable gene, and a cost/latency penalty on the *selection* fitness so the swarm discovers "cheap-fast for mechanical roles, frontier for the arbiter." See [`darwin/routing/CONTRACT.md`](darwin/routing/CONTRACT.md).
+- **B8 — Persistence, Telemetry & the Self-Improving Scorer** (`darwin/observability/`): the observability capstone — every moment of a solve is a durable, ordered `RunEvent` (event sourcing) that drives the live screen over a WebSocket bus and replays exactly; plus the optional second-order loop that tunes B1's objective weights toward the oracle (never an LLM). See [`darwin/observability/CONTRACT.md`](darwin/observability/CONTRACT.md).
 
 ---
 
@@ -54,7 +56,7 @@ darwin/problem/
 ```bash
 python3 -m venv --system-site-packages .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m pytest          # 419 tests (B1–B6), ~4s
+.venv/bin/python -m pytest          # 565 tests (B1–B8), ~4s
 ```
 
 `ortools` (B1 oracle), `google-genai` / `motor` / `httpx` (B2) are all **lazy,
@@ -279,4 +281,79 @@ fallback), and later problems search it first. Every boundary **degrades rather
 than crashes** — `solve` always returns a `SolveResult` with a real fitness:
 `SEALED` if it cleared 0.90, `EXHAUSTED` (best-so-far) if a budget ran out. See
 [`darwin/escalation/CONTRACT.md`](darwin/escalation/CONTRACT.md).
+
+---
+
+## Phase B7: Multi-Model Routing & the Model Registry (the model-aware layer)
+
+B7 is a **thin layer woven through B2–B6**, not a new subsystem. B2 already gave
+the model-agnostic client and B3 already made `model_id` a gene; B7 configures the
+curated fleet, formalizes the gene, and adds a **cost/latency penalty to the
+*selection* fitness**. That penalty is the crux: without it the search would put
+the frontier model on every agent (more capability is never penalized), so there
+would be nothing to discover. With it, the swarm discovers — under a real budget —
+that mechanical roles belong on the cheap-fast **Modular MAX**-served model and
+only the rare hard decisions (the arbiter, the Architect) need a frontier model.
+
+```
+darwin/routing/
+  fleet.py          # the curated ~5-model fleet (FAST/MID/FRONTIER) -> ModelEntry; one interface
+  policy.py         # role-kind -> tier -> model warm-start (the principled first pass)
+  efficiency.py     # the penalized SELECTION fitness + the guarded lexicographic comparator
+  gene.py           # model_id as an evolvable gene + the model-aware operators (SWAP_MODEL)
+  observability.py  # per-model/backend/tier economics -> "Modular MAX served X% of all calls"
+  tests/            # fleet/policy/efficiency/gene/observability/wiring/provider-keys + gated integration (78 tests)
+```
+
+**Two fitnesses, two decisions** (the central rule): the **0.90 gate** is judged
+on raw task `normalized_score`; **selection** uses `efficiency_adjusted_fitness =
+Q − λ·(cost,latency)` with a **lexicographic threshold guard** that *provably*
+never lets efficiency sacrifice clearing the gate (a clearing team always outranks
+a non-clearing one). Below threshold Q dominates and the search climbs; once teams
+clear, the penalty trims expensive models — **quality held, cost cut**.
+
+The wiring is **additive and opt-in**: `RearrangementLoop(selector=…,
+extra_operators=…)` and `Conductor(comparator=…)` default to the exact pre-B7
+behavior, so the whole prior suite is unchanged. We **curate five models and demo
+on that tractable tier**, and frame the catalog of thousands as the vision —
+adding any model is a single registry entry, since every backend already speaks
+one of two interfaces. See [`darwin/routing/CONTRACT.md`](darwin/routing/CONTRACT.md).
+
+---
+
+## Phase B8: Persistence, Telemetry & the Self-Improving Scorer (the capstone)
+
+B8 makes the whole brain **observable and replayable**, and adds the optional
+second-order loop. It changes **no phase's logic** — it threads an event emitter
+through the Conductor, which emits at each key moment. With B8 done, **B1–B8 are
+the complete working brain**, entered through `Conductor.solve`.
+
+```
+darwin/observability/
+  events.py                 # RunEvent + the event-type narrative (event sourcing)
+  bus.py                    # in-process async pub/sub (slow-subscriber-safe)
+  emitter.py                # EventEmitter.emit — durable append + publish, failure-safe, monotonic
+  store.py                  # Motor run_events / scorer_versions (fake-collection testable)
+  websocket_server.py       # the bus -> TypeScript face bridge (resume-from-sequence, no gap/dup)
+  replay.py                 # re-emit a past run in exact order (the pre-recorded demo backup)
+  self_improving_scorer.py  # the second-order loop: calibrate vs the oracle, re-tune the weights
+  tests/                    # events/bus/store/emitter/conductor/websocket/replay/scorer (57 tests)
+```
+
+**Event sourcing.** Domain state (genomes, invocations, corpus) stays
+authoritative; a single ordered stream of `RunEvent`s (`run_events`) is the
+narrative the screen animates and replay reads — events reference domain objects
+by id + version. Emission is async, **non-blocking, and failure-safe** (a Mongo or
+bus hiccup degrades, never blocks or crashes the solve), and `sequence_number` is
+monotonic and gap-free even under concurrent emits. A reconnecting client resumes
+from its last `sequence_number` with no gap and no duplicate.
+
+**The self-improving scorer** is the airtight answer to "how is this recursive,
+not just a search loop?" It calibrates the scorer's ranking against the OR-Tools
+**oracle** (Spearman correlation) and, when the weights stop predicting true
+optimality, re-tunes B1's `ObjectiveWeights` toward the oracle — **anchored to
+ground truth, never an LLM**, with the primary scorer staying deterministic math.
+The `scorer_versions` history is the second money-shot curve: the system getting
+better at knowing what "better" means. See
+[`darwin/observability/CONTRACT.md`](darwin/observability/CONTRACT.md).
 # bron
