@@ -1,0 +1,12 @@
+{
+  "vad": {
+    "minSpeechDurationMs": 1000,
+    "minSilenceDurationMs": 200,
+    "activationThreshold": 0.1
+  },
+  "eotTimeoutMs": 500,
+  "endpoint": {
+    "minDelayMs": 35,
+    "maxDelayMs": 160
+  }
+}
