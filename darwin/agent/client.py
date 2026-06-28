@@ -135,6 +135,10 @@ class ModelClient:
                 from darwin.agent.providers.openai_compat import OpenAICompatProvider
 
                 self._adapters[provider] = OpenAICompatProvider()
+            elif provider == Provider.GEMINI_AGENT:
+                from darwin.agent.providers.gemini_agent import GeminiAgentProvider
+
+                self._adapters[provider] = GeminiAgentProvider()
             else:  # pragma: no cover - exhaustive enum
                 raise ValueError(f"no adapter for provider {provider!r}")
         return self._adapters[provider]

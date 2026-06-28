@@ -75,6 +75,31 @@ class Conductor:
     def _genotype(genome) -> Dict[str, str]:
         return {a.agent_id: a.spec.model_id for a in genome.agents}
 
+    @staticmethod
+    def _graph(genome) -> Dict[str, Any]:
+        """Serialize the genome's org chart (nodes + edges + arbiter) so the live
+        face can draw it. Additive narration data only — never read by the solve."""
+        nodes = [
+            {
+                "id": a.agent_id,
+                "model": a.spec.model_id,
+                "role": a.spec.role_name,
+                "description": a.spec.role_name.replace("_", " "),
+                "is_arbiter": a.agent_id == genome.arbiter_id,
+            }
+            for a in genome.agents
+        ]
+        edges = [
+            {
+                "from": e.from_agent_id,
+                "to": e.to_agent_id,
+                "edge_type": e.edge_type.value,
+                "primary": e.edge_type.value == "FEEDS_ARBITER",
+            }
+            for e in genome.edges
+        ]
+        return {"nodes": nodes, "edges": edges, "arbiter_id": genome.arbiter_id}
+
     def _panel_payload(self, genome, evaluation) -> Dict[str, Any]:
         return {
             "genome_id": genome.genome_id, "genome_version": genome.version,
@@ -87,6 +112,7 @@ class Conductor:
             "genome_id": genome.genome_id, "genome_version": genome.version,
             "fitness": evaluation.fitness, "normalized_score": evaluation.normalized_score,
             "cleared_threshold": evaluation.cleared_threshold,
+            "graph": self._graph(genome),
         }
 
     async def solve(
@@ -119,6 +145,7 @@ class Conductor:
         await self._emit_event("RUN_STARTED", {
             "instance_id": instance.instance_id, "problem_class": getattr(
                 getattr(instance, "problem_class", None), "value", None),
+            "threshold": self._threshold,
         }, description="solve started")
 
         # B4 — design the initial team (never raises).
@@ -126,7 +153,7 @@ class Conductor:
         await self._emit_event("TEAM_DESIGNED", {
             "genome_id": genome.genome_id, "genome_version": genome.version,
             "agent_count": len(genome.agents), "genotype": self._genotype(genome),
-            "arbiter_id": genome.arbiter_id,
+            "arbiter_id": genome.arbiter_id, "graph": self._graph(genome),
         }, description="architect designed the initial team")
 
         # B5 — always rearrange.
@@ -176,6 +203,8 @@ class Conductor:
             await self._emit_event(
                 "ESCALATION_CORPUS_HIT" if esc.method == EscalationMethod.CORPUS else "ESCALATION_CURATED",
                 {"role": esc.added_spec.role_name, "added_agent_id": esc.added_agent_id,
+                 "model": esc.added_spec.model_id,
+                 "origin": "corpus" if esc.method == EscalationMethod.CORPUS else "grown",
                  "gap": esc.gap.capability_needed, "genome_version": esc.genome.version,
                  "corpus_entry_id": esc.corpus_entry_id},
                 description=f"escalation: {esc.description}",

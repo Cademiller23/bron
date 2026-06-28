@@ -165,6 +165,38 @@ CURATED_FLEET: List[FleetModel] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Managed agents (opt-in) — Google-hosted Antigravity agents via the Interactions
+# API. Kept SEPARATE from CURATED_FLEET on purpose: the deterministic B7 routing
+# operators (upgrade_critical / swap_to_tier) target the curated fleet's tiers,
+# and the design intent is that a managed agent is a gene the *evolution*
+# discovers and adopts only where a hard verification/judgment role earns it —
+# not a model the deterministic router auto-assigns to every arbiter (it executes
+# code in a sandbox and is seconds-to-minutes slow, so forcing it would wreck
+# latency). Enable it with install_managed_agents(); then mutation/curation can
+# place it on a node and the cost penalty keeps it rare.
+# ---------------------------------------------------------------------------
+MANAGED_AGENTS: List[FleetModel] = [
+    FleetModel(
+        model_id="antigravity-preview-05-2026",
+        display_name="Antigravity Managed Agent",
+        provider=Provider.GEMINI_AGENT,
+        tier=FRONTIER,
+        endpoint="",  # Google-hosted; no endpoint (native SDK Interactions surface)
+        api_key_env="GEMINI_API_KEY",
+        est_cost_per_1k_in=0.00125,
+        est_cost_per_1k_out=0.005,
+        est_latency_ms=20000.0,  # sandbox runs take seconds-to-minutes; priced to be rare
+        supports_native_schema=True,
+        default_thinking_level=ThinkingLevel.HIGH,
+        hf_model_id="",
+        notes="Managed agent (Interactions API). Executes code in a hosted sandbox; the "
+        "verification/arbiter gene. Confirmed live on the project Gemini key.",
+    ),
+]
+_MANAGED_BY_ID: Dict[str, FleetModel] = {m.model_id: m for m in MANAGED_AGENTS}
+
+
 class FleetError(ValueError):
     """Raised when the fleet is malformed at load (fail fast, loudly)."""
 
@@ -211,6 +243,35 @@ def profile(model_id: str) -> FleetModel:
 def by_tier(tier: CapabilityTier) -> List[str]:
     """The model_ids in a tier (stable order = fleet order)."""
     return [m.model_id for m in CURATED_FLEET if m.tier == tier]
+
+
+def get_managed_agents() -> List[FleetModel]:
+    """The opt-in managed agents (Interactions API). Empty effect on routing until
+    install_managed_agents() is called."""
+    return list(MANAGED_AGENTS)
+
+
+def managed_profile(model_id: str) -> FleetModel:
+    """The ``FleetModel`` for a managed agent id, or a clear error."""
+    try:
+        return _MANAGED_BY_ID[model_id]
+    except KeyError:
+        raise KeyError(
+            f"model_id {model_id!r} is not a known managed agent; known: {sorted(_MANAGED_BY_ID)}"
+        ) from None
+
+
+def install_managed_agents(registry: Optional[ModelRegistry] = None) -> ModelRegistry:
+    """Opt-in: register the managed agent(s) into ``registry`` (the process-wide
+    default if omitted) so an agent node can be assigned one as a model gene.
+    Idempotent. Call this only when you want the swarm to be *able* to use a hosted
+    agent — the deterministic router never auto-selects it (see MANAGED_AGENTS)."""
+    from darwin.agent.registry import default_registry
+
+    reg = registry if registry is not None else default_registry()
+    for m in MANAGED_AGENTS:
+        reg.register(m.to_registry_entry())
+    return reg
 
 
 def install_fleet(registry: Optional[ModelRegistry] = None) -> ModelRegistry:

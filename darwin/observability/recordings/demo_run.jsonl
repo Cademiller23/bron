@@ -1,0 +1,20 @@
+{"type": "run_started", "problemLabel": "supply_chain \u00b7 demo-supply-chain", "threshold": 0.9, "corpus": []}
+{"type": "phase", "text": "solve started"}
+{"type": "agent_created", "agent": {"id": "p1", "role": "cost minimizer", "model": "gemini-3.5-flash", "origin": "seed"}}
+{"type": "agent_created", "agent": {"id": "p2", "role": "risk minimizer", "model": "gemini-3.5-flash", "origin": "seed"}}
+{"type": "agent_created", "agent": {"id": "chk", "role": "capacity auditor", "model": "gemini-3.5-flash", "origin": "seed"}}
+{"type": "agent_created", "agent": {"id": "arb", "role": "arbitrator", "model": "gemini-3.5-flash", "origin": "seed"}}
+{"type": "candidate", "label": "Initial team", "nodes": [{"id": "p1", "model": "gemini-3.5-flash", "description": "cost minimizer", "kind": "agent", "terminal": false}, {"id": "p2", "model": "gemini-3.5-flash", "description": "risk minimizer", "kind": "agent", "terminal": false}, {"id": "chk", "model": "gemini-3.5-flash", "description": "capacity auditor", "kind": "agent", "terminal": false}, {"id": "arb", "model": "gemini-3.5-flash", "description": "arbitrator", "kind": "output", "terminal": true}], "edges": [{"from": "p1", "to": "chk", "primary": false}, {"from": "p1", "to": "arb", "primary": true}, {"from": "p2", "to": "arb", "primary": true}, {"from": "chk", "to": "arb", "primary": true}]}
+{"type": "phase", "text": "architect designed the initial team"}
+{"type": "candidate_scored", "fitness": 0.7}
+{"type": "generation_committed", "iteration": {"id": 1, "name": "Generation 1", "description": "initial team evaluated", "fitness": 0.7, "nodes": [{"id": "p1", "model": "gemini-3.5-flash", "description": "cost minimizer", "kind": "agent", "terminal": false}, {"id": "p2", "model": "gemini-3.5-flash", "description": "risk minimizer", "kind": "agent", "terminal": false}, {"id": "chk", "model": "gemini-3.5-flash", "description": "capacity auditor", "kind": "agent", "terminal": false}, {"id": "arb", "model": "gemini-3.5-flash", "description": "arbitrator", "kind": "output", "terminal": true}], "edges": [{"from": "p1", "to": "chk", "primary": false}, {"from": "p1", "to": "arb", "primary": true}, {"from": "p2", "to": "arb", "primary": true}, {"from": "chk", "to": "arb", "primary": true}]}}
+{"type": "log", "text": "Score 0.70 \u2014 below threshold 0.90", "kind": "score"}
+{"type": "log", "text": "Missing capability: an agent that aggressively minimizes total cost by finding cheaper allocations/routes.", "kind": "corpus"}
+{"type": "agent_created", "agent": {"id": "curated_4", "role": "curated_4", "model": "gemini-3.5-flash", "origin": "grown"}}
+{"type": "log", "text": "Created agent: curated_4 \u2192 gemini-3.5-flash", "kind": "corpus"}
+{"type": "phase", "text": "larger team rearranged"}
+{"type": "candidate_scored", "fitness": 0.95}
+{"type": "generation_committed", "iteration": {"id": 2, "name": "Generation 2", "description": "grown team evaluated", "fitness": 0.95, "nodes": [{"id": "p1", "model": "gemini-3.5-flash", "description": "cost minimizer", "kind": "agent", "terminal": false}, {"id": "p2", "model": "gemini-3.5-flash", "description": "risk minimizer", "kind": "agent", "terminal": false}, {"id": "chk", "model": "gemini-3.5-flash", "description": "capacity auditor", "kind": "agent", "terminal": false}, {"id": "arb", "model": "gemini-3.5-flash", "description": "arbitrator", "kind": "output", "terminal": true}, {"id": "curated_4", "model": "gemini-3.5-flash", "description": "curated 4", "kind": "agent", "terminal": false}], "edges": [{"from": "p1", "to": "chk", "primary": false}, {"from": "p1", "to": "arb", "primary": true}, {"from": "p2", "to": "arb", "primary": true}, {"from": "chk", "to": "arb", "primary": true}, {"from": "curated_4", "to": "arb", "primary": true}]}}
+{"type": "log", "text": "Score 0.95 \u2014 \u2713 above threshold 0.90", "kind": "success"}
+{"type": "phase", "text": "Converged \u2014 selected best team"}
+{"type": "run_complete", "bestFitness": 0.95}

@@ -17,6 +17,12 @@ from darwin.constants import DEFAULT_MODEL_ID
 class Provider(str, Enum):
     GEMINI = "GEMINI"
     OPENAI_COMPAT = "OPENAI_COMPAT"
+    # A Google-hosted managed agent (the Interactions API / Antigravity): one API
+    # call provisions an ephemeral Linux sandbox that reasons, browses, and runs
+    # code. Dispatched on exactly the same ModelEntry shape — model_id holds the
+    # agent id (e.g. "antigravity-preview-05-2026"), so it is a freely-mutatable
+    # gene like any other model, with no change to the worker or the runner.
+    GEMINI_AGENT = "GEMINI_AGENT"
 
 
 class CapabilityTier(str, Enum):

@@ -1,0 +1,32 @@
+# Darwin backend dependencies.
+#
+# Reproducible install (from the darwin/ directory):
+#   python3 -m venv .venv
+#   .venv/bin/python -m pip install -r requirements.txt
+#   .venv/bin/python -m pytest -o asyncio_mode=auto
+#
+# Heavy deps (ortools, google-genai, voyageai, motor) are imported LAZILY by the
+# package, so the unit suite runs offline even if some are absent; they are listed
+# here so a full install matches the README's claims and the live solve can run.
+
+# --- core runtime ---
+pydantic>=2.5
+numpy>=1.24
+websockets>=12.0        # the frontend bridge / B8 WebSocket server
+httpx>=0.26             # OpenAI-compatible provider transport (MiniMax, DigitalOcean, Gemma)
+
+# --- persistence (lazy; in-memory fallbacks exist) ---
+pymongo>=4.6
+motor>=3.3              # async MongoDB (Atlas: corpus + evolution record + event log)
+
+# --- model providers (lazy) ---
+google-genai>=2.3       # native Gemini + the Interactions API / managed agents
+voyageai>=0.2           # corpus embeddings (Atlas Vector Search); KeywordEmbedder fallback offline
+
+# --- oracle (lazy; exact pure-Python fallback exists) ---
+ortools>=9.8            # ground-truth optimum for B1 label verification
+
+# --- dev / test ---
+pytest>=8.0
+pytest-asyncio>=0.23
+hypothesis>=6.90
