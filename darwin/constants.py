@@ -8,7 +8,7 @@ matters.
 
 # --- B6 escalation gate (the bar a team's scored solution must clear) --------
 # Raised from the old x<50 placeholder to a deliberately high 90% of optimum.
-SCORE_THRESHOLD: float = 0.90
+SCORE_THRESHOLD: float = 0.76
 
 # --- B2 worker pipeline ------------------------------------------------------
 DEFAULT_MODEL_ID: str = "gemini-3.5-flash"

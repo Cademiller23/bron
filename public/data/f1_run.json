@@ -5,6 +5,18 @@
     "threshold": 0.76,
     "corpus": [
       {
+        "id": "orchestrator",
+        "role": "runs the whole solve",
+        "model": "gemini-3.1-pro-preview",
+        "origin": "seed"
+      },
+      {
+        "id": "architect",
+        "role": "designs & rearranges the team",
+        "model": "gemini-3.5-flash",
+        "origin": "seed"
+      },
+      {
         "id": "routing",
         "role": "minimizes travel",
         "model": "gemini-3.5-flash",
@@ -50,6 +62,16 @@
         "kind": "input"
       },
       {
+        "id": "orchestrator",
+        "model": "Main Orchestrator",
+        "description": "runs the whole solve"
+      },
+      {
+        "id": "architect",
+        "model": "Architect",
+        "description": "designs & rearranges the team"
+      },
+      {
         "id": "routing",
         "model": "Routing Specialist",
         "description": "minimizes travel"
@@ -80,15 +102,26 @@
     "edges": [
       {
         "from": "input",
-        "to": "routing"
+        "to": "orchestrator"
       },
       {
-        "from": "input",
-        "to": "scheduling"
+        "from": "orchestrator",
+        "to": "architect"
       },
       {
-        "from": "input",
-        "to": "clustering"
+        "from": "architect",
+        "to": "routing",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "scheduling",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "clustering",
+        "primary": true
       },
       {
         "from": "routing",
@@ -135,6 +168,16 @@
           "kind": "input"
         },
         {
+          "id": "orchestrator",
+          "model": "Main Orchestrator",
+          "description": "runs the whole solve"
+        },
+        {
+          "id": "architect",
+          "model": "Architect",
+          "description": "designs & rearranges the team"
+        },
+        {
           "id": "routing",
           "model": "Routing Specialist",
           "description": "minimizes travel"
@@ -165,15 +208,26 @@
       "edges": [
         {
           "from": "input",
-          "to": "routing"
+          "to": "orchestrator"
         },
         {
-          "from": "input",
-          "to": "scheduling"
+          "from": "orchestrator",
+          "to": "architect"
         },
         {
-          "from": "input",
-          "to": "clustering"
+          "from": "architect",
+          "to": "routing",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "scheduling",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "clustering",
+          "primary": true
         },
         {
           "from": "routing",
@@ -212,6 +266,16 @@
         "kind": "input"
       },
       {
+        "id": "orchestrator",
+        "model": "Main Orchestrator",
+        "description": "runs the whole solve"
+      },
+      {
+        "id": "architect",
+        "model": "Architect",
+        "description": "designs & rearranges the team"
+      },
+      {
         "id": "routing",
         "model": "Routing Specialist",
         "description": "minimizes travel"
@@ -242,15 +306,26 @@
     "edges": [
       {
         "from": "input",
-        "to": "routing"
+        "to": "orchestrator"
       },
       {
-        "from": "input",
-        "to": "scheduling"
+        "from": "orchestrator",
+        "to": "architect"
       },
       {
-        "from": "input",
-        "to": "clustering"
+        "from": "architect",
+        "to": "routing",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "scheduling",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "clustering",
+        "primary": true
       },
       {
         "from": "routing",
@@ -297,6 +372,16 @@
           "kind": "input"
         },
         {
+          "id": "orchestrator",
+          "model": "Main Orchestrator",
+          "description": "runs the whole solve"
+        },
+        {
+          "id": "architect",
+          "model": "Architect",
+          "description": "designs & rearranges the team"
+        },
+        {
           "id": "routing",
           "model": "Routing Specialist",
           "description": "minimizes travel"
@@ -327,15 +412,26 @@
       "edges": [
         {
           "from": "input",
-          "to": "routing"
+          "to": "orchestrator"
         },
         {
-          "from": "input",
-          "to": "scheduling"
+          "from": "orchestrator",
+          "to": "architect"
         },
         {
-          "from": "input",
-          "to": "clustering"
+          "from": "architect",
+          "to": "routing",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "scheduling",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "clustering",
+          "primary": true
         },
         {
           "from": "routing",
@@ -371,7 +467,7 @@
   {
     "type": "agent_created",
     "agent": {
-      "id": "scheduling",
+      "id": "scheduling_v2",
       "role": "week placement",
       "model": "llama3.3-70b-instruct",
       "origin": "grown"
@@ -385,7 +481,7 @@
   {
     "type": "agent_created",
     "agent": {
-      "id": "arbitrator",
+      "id": "arbitrator_v2",
       "role": "synthesizes calendar",
       "model": "gemini-3.1-pro-preview",
       "origin": "grown"
@@ -404,6 +500,16 @@
         "model": "Input",
         "description": "F1 calendar request",
         "kind": "input"
+      },
+      {
+        "id": "orchestrator",
+        "model": "Main Orchestrator",
+        "description": "runs the whole solve"
+      },
+      {
+        "id": "architect",
+        "model": "Architect",
+        "description": "designs & rearranges the team"
       },
       {
         "id": "routing",
@@ -436,15 +542,26 @@
     "edges": [
       {
         "from": "input",
-        "to": "routing"
+        "to": "orchestrator"
       },
       {
-        "from": "input",
-        "to": "scheduling"
+        "from": "orchestrator",
+        "to": "architect"
       },
       {
-        "from": "input",
-        "to": "clustering"
+        "from": "architect",
+        "to": "routing",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "scheduling",
+        "primary": true
+      },
+      {
+        "from": "architect",
+        "to": "clustering",
+        "primary": true
       },
       {
         "from": "routing",
@@ -491,6 +608,16 @@
           "kind": "input"
         },
         {
+          "id": "orchestrator",
+          "model": "Main Orchestrator",
+          "description": "runs the whole solve"
+        },
+        {
+          "id": "architect",
+          "model": "Architect",
+          "description": "designs & rearranges the team"
+        },
+        {
           "id": "routing",
           "model": "Routing Specialist",
           "description": "gemini-3.5-flash"
@@ -521,15 +648,26 @@
       "edges": [
         {
           "from": "input",
-          "to": "routing"
+          "to": "orchestrator"
         },
         {
-          "from": "input",
-          "to": "scheduling"
+          "from": "orchestrator",
+          "to": "architect"
         },
         {
-          "from": "input",
-          "to": "clustering"
+          "from": "architect",
+          "to": "routing",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "scheduling",
+          "primary": true
+        },
+        {
+          "from": "architect",
+          "to": "clustering",
+          "primary": true
         },
         {
           "from": "routing",
@@ -555,7 +693,7 @@
   },
   {
     "type": "phase",
-    "text": "Converged — revenue 2053 (+7.7% vs baseline)"
+    "text": "Converged \u2014 revenue 2053 (+7.7% vs baseline)"
   },
   {
     "type": "run_complete",
