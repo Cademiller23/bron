@@ -1,24 +1,56 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
-.hypothesis/
-.coverage
-.darwin/.env
-htmlcov/
+*.py[cod]
+*$py.class
 *.egg-info/
 build/
 dist/
-.DS_Store
+htmlcov/
+.coverage
+.pytest_cache/
+.hypothesis/
+**/.pytest_cache/
+**/.hypothesis/
+**/__pycache__/
 
-# Next.js frontend (frontend/)
-frontend/node_modules/
-frontend/.next/
-frontend/.env.local
+# Virtual environments (never commit)
+.venv/
+venv/
+**/venv/
+**/.venv/
 
-# secrets and envs — never commit
+# Node / Next.js
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+out/
+*.tsbuildinfo
+
+# Environment & secrets
 .env
 .env.*
 **/.env
-.venv/
-**/.venv/
+**/.env.*
+!.env.example
+!**/.env.example
+frontend/.env.local
+
+# OS & editor
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Tooling artifacts
+.claude/
+.codex/
+.cursor/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

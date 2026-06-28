@@ -1,84 +1,95 @@
-# Lebronsseiur
+# Lebronsseiur (Darwin + F1 Visualization)
 
-Vercel-ready T3-style Next.js app scaffolded with TypeScript, Tailwind, tRPC,
-TanStack Query, and LiveKit.
+Monorepo for the AIEWF hackathon submission:
 
-## Getting Started
+- **`darwin/`** — Python optimization brain (F1 calendar scoring, multi-agent evolution, WebSocket bridge)
+- **`frontend/`** — Next.js app (speech intake → agent network → side-by-side F1 flight map)
 
-Install dependencies and copy the environment template:
+## Quick start (demo)
+
+### 1. Backend (Darwin)
 
 ```bash
+cd darwin
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python -m pytest           # optional: verify backend (~4s)
+```
+
+Start the WebSocket bridge (streams evolution events to the UI):
+
+```bash
+cd darwin
+source venv/bin/activate
+# Demo mode (no API keys): recorded replay
+DARWIN_DEMO=1 python -m darwin.observability.serve_frontend
+# Live F1 solve (requires configured model keys in darwin/.env)
+python -m darwin.observability.serve_frontend
+```
+
+Serves on **`ws://localhost:8765`**.
+
+### 2. Frontend
+
+```bash
+cd frontend
 npm install
 cp .env.example .env.local
 ```
 
-Fill in `.env.local`, then run the development server:
+In `.env.local`, set:
+
+```bash
+NEXT_PUBLIC_AGENT_RUN_WS=ws://localhost:8765   # live bron; omit for built-in simulation
+```
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open **http://localhost:3000**
 
-The dev command also starts the LiveKit voice worker used by `/speech`. The
-browser publishes microphone audio to a LiveKit room. The worker joins that
-room, streams STT through LiveKit Inference, sends the turn to the DigitalOcean
-OpenAI-compatible chat model, streams the response into Cartesia TTS through
-LiveKit Inference, and publishes the returned audio back into the room.
+| Route | What it shows |
+|-------|----------------|
+| `/` | Speech / voice intake (landing) |
+| `/agents` | Live agent topology evolution |
+| `/flight` | Side-by-side current vs proposed F1 calendar |
 
-## LiveKit Synthetic Mic Test
+## Repo layout
 
-With `npm run dev` already running, run:
-
-```bash
-npm run test:livekit:synthetic
+```
+darwin/           # Python backend (B1–B8)
+frontend/         # Next.js visualization app
+requirements.txt  # Root pytest deps (mirrors darwin/requirements.txt)
+pyproject.toml    # Darwin package metadata
+conftest.py       # Pytest configuration
 ```
 
-The test opens `/speech` in Chrome, replaces `getUserMedia` with a generated
-audio stream, clicks the voice square, screenshots the page every few seconds,
-and fails if browser mic energy or outbound WebRTC audio packets stay flat.
-Reports are written to `.codex/media/livekit-synthetic/`.
-
-## tRPC API
-
-The app exposes a single tRPC endpoint at `/trpc`.
-
-- `livekit.createToken` creates a LiveKit room token.
-- `conversation.respond` sends a captured user utterance to the cheaper
-  DigitalOcean model for non-LiveKit fallback flows.
-- `conversation.summarize` sends the conversation to the summary model and
-  returns the final implementation brief string.
-
-Example LiveKit token request:
+## Tests
 
 ```bash
-curl -X POST "http://localhost:3000/trpc/livekit.createToken" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "json": {
-      "room": "race-strategy",
-      "identity": "engineer-1",
-      "name": "Race Engineer"
-    }
-  }'
+# Backend (from repo root)
+pip install -r requirements.txt
+python -m pytest
+
+# Frontend stream verifier (with serve_frontend running)
+cd frontend && node scripts/verify-darwin-stream.mjs
 ```
 
-## Environment Variables
+## Environment variables
 
-- `LIVEKIT_URL`
-- `NEXT_PUBLIC_LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-- `LIVEKIT_AGENT_STT_MODEL`
-- `LIVEKIT_AGENT_TTS_MODEL`
-- `LIVEKIT_AGENT_TTS_VOICE`
-- `DIGITALOCEAN_MODEL_API_KEY`
-- `DIGITALOCEAN_MODEL_BASE_URL`
-- `DIGITALOCEAN_CHAT_MODEL`
-- `DIGITALOCEAN_SUMMARY_MODEL`
+- **Backend:** copy `darwin/.env.example` → `darwin/.env` (API keys for live runs; not required for `DARWIN_DEMO=1`)
+- **Frontend:** copy `frontend/.env.example` → `frontend/.env.local` (LiveKit + DigitalOcean for voice; WebSocket URL for agents)
 
-## Deploy on Vercel
+Never commit `.env` or `.env.local` files.
 
-Import the repo in Vercel and add the same variables from `.env.example` to the
-project's Environment Variables. The default `npm run build` command is already
-compatible with Vercel's Next.js preset.
+## F1 calendar data
+
+Sample run artifacts live in `frontend/public/data/` (`f1_baseline.json`, `f1_optimized.json`, `f1_run.json`).
+
+## Architecture
+
+Darwin emits events → `darwin/observability/frontend_bridge.py` translates them to the frontend `RunEvent` protocol → `frontend/src/lib/agent-run.ts` reducer drives the agents page. The flight map visualizes baseline vs optimized calendar routes with cumulative carbon, cost, and revenue counters.
+
+See `darwin/observability/CONTRACT.md` and phase `CONTRACT.md` files under `darwin/` for backend design details.
