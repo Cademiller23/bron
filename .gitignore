@@ -11,6 +11,11 @@ build/
 dist/
 .DS_Store
 
+# Next.js frontend (frontend/)
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
 # secrets and envs — never commit
 .env
 .env.*
