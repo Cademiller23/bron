@@ -60,7 +60,14 @@ class OpenAICompatProvider(ModelProvider):
     ) -> ModelResponse:
         base = (entry.endpoint or "").rstrip("/")
         url = f"{base}/chat/completions"
-        api_key = self._api_key if self._api_key is not None else os.environ.get(self._api_key_env, "")
+        # Key precedence: an explicitly injected key (tests) > the model's own
+        # api_key_env from the registry entry (so MAX and MiniMax authenticate with
+        # different keys behind one adapter) > the adapter's default env var.
+        if self._api_key is not None:
+            api_key = self._api_key
+        else:
+            env_var = getattr(entry, "api_key_env", "") or self._api_key_env
+            api_key = os.environ.get(env_var, "")
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         body: Dict[str, Any] = {
             "model": entry.model_id,

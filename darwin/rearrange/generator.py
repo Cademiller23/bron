@@ -23,10 +23,14 @@ def generate_candidates(
     hints: Optional[Dict[str, float]] = None,
     registry: Any = None,
     max_tries: Optional[int] = None,
+    extra_operators: Optional[List[Any]] = None,
 ) -> List[CandidateRearrangement]:
     rng = rng or random.Random()
     registry = registry or default_registry()
-    operators = list(ALL_OPERATORS)
+    # B7 weaves its model-aware operators in here without rebuilding the generator:
+    # extra_operators (e.g. downgrade_mechanical/upgrade_critical) share the same
+    # (genome, rng, registry) signature and are sampled alongside the base set.
+    operators = list(ALL_OPERATORS) + list(extra_operators or [])
     weights = [max(0.01, (hints or {}).get(op.__name__, 1.0)) for op in operators]
 
     candidates: List[CandidateRearrangement] = []

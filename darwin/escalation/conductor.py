@@ -41,6 +41,8 @@ class Conductor:
         store: Any = None, *, event_sink: Optional[Callable] = None,
         threshold: float = SCORE_THRESHOLD, epsilon: float = ESCALATION_EPSILON,
         clock: Callable[[], float] = time.monotonic,
+        comparator: Optional[Callable] = None,
+        emitter: Any = None,
     ) -> None:
         self.architect = architect
         self.rearrangement_loop = rearrangement_loop
@@ -51,6 +53,41 @@ class Conductor:
         self._threshold = threshold
         self._epsilon = epsilon
         self._clock = clock
+        # B7 (opt-in): a guarded comparator improves(candidate_eval, incumbent_eval)
+        # for team-growth elitism. None keeps the pre-B7 raw-fitness-delta rule.
+        # The 0.90 gate stays on raw Q regardless (the threshold check never moves).
+        self._comparator = comparator
+        # B8 (opt-in): an EventEmitter the solve narrates through. None = no events
+        # (byte-identical pre-B8 behavior). emit is failure-safe and never blocks.
+        self._emitter = emitter
+
+    # -- B8 event narration (no-op + failure-safe when no emitter) -----------
+    async def _emit_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None,
+                          *, description: str = "") -> None:
+        if self._emitter is None:
+            return
+        try:
+            await self._emitter.emit(event_type, payload or {}, description=description)
+        except Exception as exc:  # noqa: BLE001 - narration must never affect the solve
+            logger.debug("event emit failed (ignored): %s", exc)
+
+    @staticmethod
+    def _genotype(genome) -> Dict[str, str]:
+        return {a.agent_id: a.spec.model_id for a in genome.agents}
+
+    def _panel_payload(self, genome, evaluation) -> Dict[str, Any]:
+        return {
+            "genome_id": genome.genome_id, "genome_version": genome.version,
+            "genotype": self._genotype(genome),
+            "total_cost_usd": evaluation.total_cost_usd, "total_latency_ms": evaluation.total_latency_ms,
+        }
+
+    def _eval_payload(self, genome, evaluation) -> Dict[str, Any]:
+        return {
+            "genome_id": genome.genome_id, "genome_version": genome.version,
+            "fitness": evaluation.fitness, "normalized_score": evaluation.normalized_score,
+            "cleared_threshold": evaluation.cleared_threshold,
+        }
 
     async def solve(
         self, instance: ProblemInstance, weights: Optional[ObjectiveWeights] = None,
@@ -62,19 +99,43 @@ class Conductor:
             return await self._solve(instance, weights, budget)
         except Exception as exc:  # noqa: BLE001 - the brain always returns a result
             logger.exception("solve boundary caught an error; returning a floor result")
-            return self._floor_result(instance, weights, error=f"{type(exc).__name__}: {exc}")
+            floor = self._floor_result(instance, weights, error=f"{type(exc).__name__}: {exc}")
+            # Emit a terminal event so a run that crashed after RUN_STARTED never
+            # dangles without a RUN_SEALED/RUN_EXHAUSTED. Guard with BaseException so
+            # a cancellation landing on this best-effort narration await can never
+            # lose the floor result (the brain always returns one).
+            try:
+                await self._emit_event("RUN_EXHAUSTED", {
+                    "instance_id": getattr(instance, "instance_id", "unknown"),
+                    "error": f"{type(exc).__name__}: {exc}", "floored": True,
+                }, description="run floored (boundary error)")
+            except BaseException as emit_exc:  # noqa: BLE001 - never lose the floor over narration
+                logger.debug("terminal emit interrupted (%s); returning floor", emit_exc)
+            return floor
 
     # =======================================================================
     async def _solve(self, instance, weights, budget) -> SolveResult:
         start = self._clock()
+        await self._emit_event("RUN_STARTED", {
+            "instance_id": instance.instance_id, "problem_class": getattr(
+                getattr(instance, "problem_class", None), "value", None),
+        }, description="solve started")
 
         # B4 — design the initial team (never raises).
         genome = await self.architect.design_initial_team(instance, weights)
+        await self._emit_event("TEAM_DESIGNED", {
+            "genome_id": genome.genome_id, "genome_version": genome.version,
+            "agent_count": len(genome.agents), "genotype": self._genotype(genome),
+            "arbiter_id": genome.arbiter_id,
+        }, description="architect designed the initial team")
 
         # B5 — always rearrange.
         result = await self._rearrange(genome, instance, weights)
         best_genome = result.best_genome
         best_eval = result.best_evaluation
+        await self._emit_event("GENOME_EVALUATED", self._eval_payload(best_genome, best_eval),
+                               description="initial team evaluated")
+        await self._emit_event("MODEL_PANEL_UPDATE", self._panel_payload(best_genome, best_eval))
 
         full_trace: List[float] = list(result.fitness_trace)
         trace_markers: List[Dict[str, Any]] = []
@@ -86,6 +147,9 @@ class Conductor:
         total_cost = result.total_cost_usd  # true spend across the whole rearrange, not just the winner
 
         self._emit_threshold(best_eval)
+        await self._emit_event("THRESHOLD_CHECK", {
+            "normalized_score": best_eval.normalized_score, "cleared": best_eval.cleared_threshold,
+        }, description="threshold check")
 
         # outer escalation loop (conditional — grow only when reshaping can't clear 90%)
         while (
@@ -96,6 +160,7 @@ class Conductor:
             and total_cost < budget.max_total_cost_usd
         ):
             snapshot = best_genome
+            pre_eval = best_eval
             pre_fitness = best_eval.fitness
 
             # B6 — escalate (corpus first, then curate). Never raises.
@@ -108,6 +173,13 @@ class Conductor:
                 break
 
             self._emit_escalation(esc)
+            await self._emit_event(
+                "ESCALATION_CORPUS_HIT" if esc.method == EscalationMethod.CORPUS else "ESCALATION_CURATED",
+                {"role": esc.added_spec.role_name, "added_agent_id": esc.added_agent_id,
+                 "gap": esc.gap.capability_needed, "genome_version": esc.genome.version,
+                 "corpus_entry_id": esc.corpus_entry_id},
+                description=f"escalation: {esc.description}",
+            )
             trace_markers.append({
                 "index": len(full_trace), "label": f"agent added: {esc.added_spec.role_name}",
                 "method": esc.method.value, "corpus_hit": esc.method == EscalationMethod.CORPUS,
@@ -122,8 +194,22 @@ class Conductor:
             total_cost += result.total_cost_usd
             rounds += 1
             delta = round_eval.fitness - pre_fitness
+            await self._emit_event("REARRANGE_ADOPTED", {
+                "genome_id": result.best_genome.genome_id, "genome_version": result.best_genome.version,
+                "adopted_count": result.adopted_count, "iterations": result.iterations,
+            }, description="larger team rearranged")
+            await self._emit_event("GENOME_EVALUATED", self._eval_payload(result.best_genome, round_eval),
+                                   description="grown team evaluated")
+            await self._emit_event("MODEL_PANEL_UPDATE", self._panel_payload(result.best_genome, round_eval))
 
-            if delta > self._epsilon:  # TEAM-GROWTH ELITISM: keep only if it helped
+            # Keep the grown team only if it helped. Default: a strict raw-fitness
+            # improvement. B7 (opt-in): the guarded efficiency comparator (which
+            # still never lets efficiency override clearing the gate).
+            if self._comparator is None:
+                kept_decision = delta > self._epsilon
+            else:
+                kept_decision = bool(self._comparator(round_eval, pre_eval))
+            if kept_decision:  # TEAM-GROWTH ELITISM: keep only if it helped
                 best_genome = result.best_genome
                 best_eval = round_eval
                 agents_added.append({"agent_id": esc.added_agent_id, "role": esc.added_spec.role_name,
@@ -139,6 +225,9 @@ class Conductor:
                 if esc.method == EscalationMethod.CORPUS and esc.corpus_entry_id:
                     await self.corpus.update_stats(esc.corpus_entry_id, delta, False)
                 kept = False
+                await self._emit_event("AGENT_ROLLED_BACK", {
+                    "role": esc.added_spec.role_name, "added_agent_id": esc.added_agent_id, "delta": delta,
+                }, description=f"rolled back '{esc.added_spec.role_name}' (no improvement)")
 
             per_round.append({
                 "round": rounds, "method": esc.method.value, "role": esc.added_spec.role_name,
@@ -146,9 +235,15 @@ class Conductor:
                 "normalized_after": best_eval.normalized_score, "gap": esc.gap.capability_needed,
             })
             self._emit_threshold(best_eval)
+            await self._emit_event("THRESHOLD_CHECK", {
+                "normalized_score": best_eval.normalized_score, "cleared": best_eval.cleared_threshold,
+            }, description="threshold check")
 
         status = SolveStatus.SEALED if best_eval.cleared_threshold else SolveStatus.EXHAUSTED
-        return SolveResult(
+        # Build the result BEFORE emitting the terminal, so a (near-impossible)
+        # construction failure happens before any terminal is recorded — the
+        # boundary then emits the single terminal, never a contradictory second one.
+        result = SolveResult(
             instance_id=instance.instance_id, final_genome=best_genome, final_evaluation=best_eval,
             cleared_threshold=best_eval.cleared_threshold, status=status, escalation_rounds=rounds,
             agents_added=agents_added, corpus_hits=corpus_hits, corpus_promotions=corpus_promotions,
@@ -156,6 +251,14 @@ class Conductor:
             total_latency_ms=(self._clock() - start) * 1000.0, total_cost_usd=total_cost,
             per_round_summary=per_round,
         )
+        await self._emit_event(
+            "RUN_SEALED" if status == SolveStatus.SEALED else "RUN_EXHAUSTED",
+            {"instance_id": instance.instance_id, "genome_id": best_genome.genome_id,
+             "normalized_score": best_eval.normalized_score, "fitness": best_eval.fitness,
+             "escalation_rounds": rounds, "agents_added": len(agents_added)},
+            description=f"run {status.value.lower()}",
+        )
+        return result
 
     # =======================================================================
     async def _rearrange(self, genome, instance, weights):

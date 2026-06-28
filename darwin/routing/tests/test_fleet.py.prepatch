@@ -1,0 +1,90 @@
+"""Fleet — entries validate, tiers populated, projection to ModelEntry, lookups."""
+
+import pytest
+
+from darwin.agent.registry import CapabilityTier, ModelEntry, ModelRegistry, Provider
+from darwin.routing import fleet as F
+from darwin.routing.fleet import FAST, FRONTIER, MID, FleetError, FleetModel
+
+
+def test_every_entry_is_well_formed():
+    for m in F.get_fleet():
+        assert m.est_cost_per_1k_in >= 0 and m.est_cost_per_1k_out >= 0 and m.est_latency_ms >= 0
+        if m.provider == Provider.OPENAI_COMPAT:
+            assert m.endpoint.startswith("http://") or m.endpoint.startswith("https://")
+        else:
+            assert m.provider == Provider.GEMINI
+
+
+def test_fleet_spans_all_three_tiers():
+    tiers = {m.tier for m in F.get_fleet()}
+    assert {FAST, MID, FRONTIER} <= tiers
+    assert F.by_tier(FAST) and F.by_tier(MID) and F.by_tier(FRONTIER)
+
+
+def test_fast_tier_is_max_or_minimax():
+    fast = F.by_tier(FAST)
+    assert "max-llama-3.1-8b" in fast  # the load-bearing MAX model
+    assert "minimax-m2" in fast
+
+
+def test_frontier_is_gemini_pro():
+    assert F.by_tier(FRONTIER) == ["gemini-3.1-pro"]
+
+
+def test_profile_returns_entry():
+    p = F.profile("max-llama-3.1-8b")
+    assert p.provider == Provider.OPENAI_COMPAT and p.tier == FAST
+    assert p.hf_model_id == "meta-llama/Llama-3.1-8B-Instruct"
+
+
+def test_profile_out_of_catalog_raises_clearly():
+    with pytest.raises(KeyError) as ei:
+        F.profile("gpt-9-ultra")
+    assert "not in the curated fleet" in str(ei.value)
+
+
+def test_to_registry_entry_projects_faithfully():
+    m = F.profile("gemini-3.1-pro")
+    e = m.to_registry_entry()
+    assert isinstance(e, ModelEntry)
+    assert e.model_id == m.model_id and e.provider == m.provider
+    assert e.capability_tier == m.tier and e.est_cost_per_1k_out == m.est_cost_per_1k_out
+
+
+def test_install_fleet_registers_all_into_registry():
+    reg = ModelRegistry()
+    F.install_fleet(reg)
+    for m in F.get_fleet():
+        assert reg.contains(m.model_id)
+        assert reg.get(m.model_id).capability_tier == m.tier
+
+
+def test_fleet_registry_is_self_contained():
+    reg = F.fleet_registry()
+    assert set(reg.all_ids()) == {m.model_id for m in F.get_fleet()}
+
+
+def test_install_is_idempotent():
+    reg = F.fleet_registry()
+    n = len(reg.all_ids())
+    F.install_fleet(reg)
+    assert len(reg.all_ids()) == n  # re-register replaces, never duplicates
+
+
+def test_openai_compat_without_endpoint_is_rejected():
+    bad = FleetModel(model_id="x", display_name="x", provider=Provider.OPENAI_COMPAT, tier=FAST)
+    with pytest.raises(FleetError):
+        F._validate_fleet([bad])
+
+
+def test_duplicate_ids_rejected():
+    a = F.profile("minimax-m2")
+    with pytest.raises(FleetError):
+        F._validate_fleet([a, a])
+
+
+def test_missing_tier_rejected():
+    only_fast = [m for m in F.get_fleet() if m.tier == FAST]
+    with pytest.raises(FleetError):
+        F._validate_fleet(only_fast)

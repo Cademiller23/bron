@@ -1,0 +1,75 @@
+"""Policy — role classification + tier/model warm-start."""
+
+from darwin.agent.registry import reset_default_registry
+from darwin.agent.spec import AgentSpec, InputKind, OutputKind
+from darwin.routing import policy as P
+from darwin.routing.fleet import FAST, FRONTIER, MID, by_tier
+from darwin.team.fixtures import proposer_checker_arbiter_genome
+
+
+def _spec(oc, ic=InputKind.FULL_PROBLEM, rid="r"):
+    return AgentSpec(agent_id=rid, role_name=rid, role_description="a role", input_contract=ic, output_contract=oc)
+
+
+def test_classify_role_from_output_contract():
+    assert P.classify_role(_spec(OutputKind.CRITIQUE)) == P.CHECKER
+    assert P.classify_role(_spec(OutputKind.CONSTRAINT_REPORT)) == P.CHECKER
+    assert P.classify_role(_spec(OutputKind.FULL_SOLUTION)) == P.PROPOSER
+    assert P.classify_role(_spec(OutputKind.PARTIAL_SOLUTION)) == P.PROPOSER
+    assert P.classify_role(_spec(OutputKind.ARBITRATION)) == P.ARBITER
+    assert P.classify_role(_spec(OutputKind.DECOMPOSITION)) == P.DECOMPOSER
+
+
+def test_is_arbiter_overrides_output_contract():
+    assert P.classify_role(_spec(OutputKind.FULL_SOLUTION), is_arbiter=True) == P.ARBITER
+
+
+def test_suggest_tier_mapping():
+    assert P.suggest_tier(P.CHECKER) == FAST
+    assert P.suggest_tier(P.PROPOSER) == MID
+    assert P.suggest_tier(P.SPECIALIST) == MID
+    assert P.suggest_tier(P.ARBITER) == FRONTIER
+    assert P.suggest_tier(P.ARCHITECT) == FRONTIER
+
+
+def test_suggest_model_in_the_right_tier():
+    assert P.suggest_model(P.CHECKER) in by_tier(FAST)
+    assert P.suggest_model(P.PROPOSER) in by_tier(MID)
+    assert P.suggest_model(P.ARBITER) in by_tier(FRONTIER)
+
+
+def test_checker_warmstarts_to_the_cheapest_fast_model():
+    # llama3.3-70b-instruct is the cheapest FAST model — the load-bearing DigitalOcean workhorse
+    assert P.suggest_model(P.CHECKER) == "llama3.3-70b-instruct"
+
+
+def test_arbiter_warmstarts_to_frontier():
+    assert P.suggest_model(P.ARBITER) == "gemini-3.1-pro-preview"
+
+
+def test_suggest_model_falls_back_when_tier_unavailable():
+    # restrict to only flash (MID): an arbiter (FRONTIER) falls back to MID
+    pick = P.suggest_model(P.ARBITER, allowed_ids={"gemini-3.5-flash"})
+    assert pick == "gemini-3.5-flash"
+
+
+def test_suggest_model_none_when_no_usable_model():
+    assert P.suggest_model(P.CHECKER, allowed_ids=set()) is None
+
+
+def test_cheapest_in_tier_is_deterministic():
+    a = P.cheapest_in_tier(FAST)
+    b = P.cheapest_in_tier(FAST)
+    assert a == b == "llama3.3-70b-instruct"
+
+
+def test_warm_start_genotype_assigns_each_agent():
+    reset_default_registry()
+    g = proposer_checker_arbiter_genome()
+    geno = P.warm_start_genotype(g)
+    assert set(geno) == {a.agent_id for a in g.agents}
+    # the arbiter gets a FRONTIER model; the checker gets a FAST model
+    assert geno[g.arbiter_id] in by_tier(FRONTIER)
+    chk = next(a.agent_id for a in g.agents if a.spec.output_contract in
+               (OutputKind.CRITIQUE, OutputKind.CONSTRAINT_REPORT))
+    assert geno[chk] in by_tier(FAST)

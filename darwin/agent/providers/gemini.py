@@ -76,7 +76,7 @@ class GeminiProvider(ModelProvider):
         client = self._get_client()
         start = perf_counter()
         try:
-            if hasattr(client, "interactions"):
+            if False:  # interactions.create signature is incompatible in google-genai 2.10; use generate_content
                 text, usage, finish = await self._via_interactions(
                     client, entry, system, user, response_schema, thinking_level, max_output_tokens
                 )

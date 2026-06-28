@@ -47,6 +47,7 @@ class ProblemClass(str, Enum):
     TRANSSHIPMENT = "TRANSSHIPMENT"
     FACILITY_LOCATION = "FACILITY_LOCATION"
     VEHICLE_ROUTING = "VEHICLE_ROUTING"
+    F1_CALENDAR = "F1_CALENDAR"  # F1 calendar optimization (scored by f1_scorer, not the flow scorer)
 
 
 class Difficulty(str, Enum):

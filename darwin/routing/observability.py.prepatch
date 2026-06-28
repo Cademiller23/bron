@@ -1,0 +1,251 @@
+"""Per-model observability — the Modular / DigitalOcean story made visible.
+
+Reads B2's ``agent_invocations`` telemetry (each call records ``model_id``,
+``latency_ms``, ``est_cost``, tokens, success) and aggregates a solve into the
+numbers the live screen renders: calls per model / backend / tier, the cost
+breakdown, the latency contribution, and the headline — *"Modular MAX served X%
+of all calls."* The FAST tier should dominate call VOLUME while the FRONTIER
+tier dominates per-call COST: the picture that proves "lean on cheap, reserve
+expensive."
+
+Pure and failure-safe: a missing/empty telemetry stream degrades to zeros (never
+a crash), and a malformed record is skipped, not fatal — the panel reflects
+reality, never a cached guess.
+"""
+
+import math
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from darwin.agent.registry import Provider
+
+
+class ModelStat(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_id: str
+    backend: str = "UNKNOWN"
+    tier: str = "UNKNOWN"
+    max_served: bool = False
+    calls: int = 0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    successes: int = 0
+    failures: int = 0
+    call_share: float = 0.0  # fraction of all calls this model served
+
+
+class GroupStat(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    key: str
+    calls: int = 0
+    cost_usd: float = 0.0
+    latency_ms: float = 0.0
+    call_share: float = 0.0
+
+
+class ModelEconomics(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    total_calls: int = 0
+    total_cost_usd: float = 0.0
+    total_latency_ms: float = 0.0
+    total_tokens_in: int = 0
+    total_tokens_out: int = 0
+    per_model: List[ModelStat] = Field(default_factory=list)
+    per_backend: List[GroupStat] = Field(default_factory=list)
+    per_tier: List[GroupStat] = Field(default_factory=list)
+    max_served_share: float = 0.0  # the Modular MAX headline
+    fast_tier_share: float = 0.0
+    headline: str = "no model calls recorded"
+
+
+def _safe_float(v: Any) -> float:
+    try:
+        f = float(v)
+    except Exception:  # noqa: BLE001 - any coercion failure (incl. a pathological __float__) -> 0
+        return 0.0
+    return f if math.isfinite(f) else 0.0
+
+
+def _safe_int(v: Any) -> int:
+    try:
+        f = float(v)
+    except Exception:  # noqa: BLE001
+        return 0
+    if not math.isfinite(f):  # inf/-inf/nan -> int() would raise OverflowError/ValueError
+        return 0
+    return max(0, int(f))
+
+
+def _safe_model_id(raw: Any) -> str:
+    """Coerce a record's model_id to a hashable, schema-valid string; genuinely
+    missing -> 'unknown'. Defends against a corrupt non-string id (a list crashes
+    setdefault; a pathological __str__ is caught)."""
+    if isinstance(raw, str):
+        return raw or "unknown"
+    if raw is None:
+        return "unknown"
+    try:
+        return str(raw)
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _fleet_index(fleet: Optional[List[Any]]):
+    if fleet is None:
+        from darwin.routing.fleet import get_fleet
+
+        fleet = get_fleet()
+    return {m.model_id: m for m in fleet}
+
+
+def _registry(registry: Optional[Any]):
+    if registry is None:
+        from darwin.agent.registry import default_registry
+
+        return default_registry()
+    return registry
+
+
+def _backend_and_tier(model_id: str, registry: Any, fleet_idx: Dict[str, Any]):
+    """Resolve (backend, tier, max_served) for a model_id, degrading gracefully."""
+    backend, tier = "UNKNOWN", "UNKNOWN"
+    try:
+        entry = registry.get(model_id)
+        backend = entry.provider.value
+        tier = entry.capability_tier.value
+    except Exception:  # not in the registry -> fall back to the fleet, else UNKNOWN
+        fm = fleet_idx.get(model_id)
+        if fm is not None:
+            backend = fm.provider.value
+            tier = fm.tier.value
+    fm = fleet_idx.get(model_id)
+    # MAX-served = an OpenAI-compatible model the fleet serves from a HF id (MAX),
+    # which distinguishes the Modular workhorses from other OpenAI-compatible
+    # providers like MiniMax.
+    max_served = bool(fm is not None and fm.provider == Provider.OPENAI_COMPAT and fm.hf_model_id)
+    return backend, tier, max_served
+
+
+def aggregate(
+    invocations: List[Dict[str, Any]], *, registry: Optional[Any] = None, fleet: Optional[List[Any]] = None
+) -> ModelEconomics:
+    """Aggregate raw ``agent_invocations`` records into per-model economics."""
+    if not invocations:
+        return ModelEconomics()
+    reg = _registry(registry)
+    fleet_idx = _fleet_index(fleet)
+
+    by_model: Dict[str, Dict[str, Any]] = {}
+    by_backend: Dict[str, Dict[str, float]] = {}
+    by_tier: Dict[str, Dict[str, float]] = {}
+    total_calls = 0
+    total_cost = 0.0
+    total_lat = 0.0
+    total_tin = 0
+    total_tout = 0
+    max_calls = 0
+    fast_calls = 0
+
+    for rec in invocations:
+        if not isinstance(rec, dict):
+            continue  # skip a malformed record, never crash
+        # Extract+coerce inside a guard so NO corrupt record can crash the panel
+        # (the docstring contract). Mutations below operate on already-safe values.
+        try:
+            model_id = _safe_model_id(rec.get("model_id"))
+            backend, tier, max_served = _backend_and_tier(model_id, reg, fleet_idx)
+            cost = _safe_float(rec.get("est_cost"))
+            lat = _safe_float(rec.get("latency_ms"))
+            tin = _safe_int(rec.get("tokens_in"))
+            tout = _safe_int(rec.get("tokens_out"))
+            ok = bool(rec.get("success", True))
+        except Exception:  # noqa: BLE001 - a pathological record is skipped, not fatal
+            continue
+
+        m = by_model.setdefault(model_id, {
+            "backend": backend, "tier": tier, "max_served": max_served, "calls": 0, "cost": 0.0,
+            "lat": 0.0, "tin": 0, "tout": 0, "ok": 0, "fail": 0,
+        })
+        m["calls"] += 1
+        m["cost"] += cost
+        m["lat"] += lat
+        m["tin"] += tin
+        m["tout"] += tout
+        m["ok" if ok else "fail"] += 1
+
+        for grp, key in ((by_backend, backend), (by_tier, tier)):
+            g = grp.setdefault(key, {"calls": 0, "cost": 0.0, "lat": 0.0})
+            g["calls"] += 1
+            g["cost"] += cost
+            g["lat"] += lat
+
+        total_calls += 1
+        total_cost += cost
+        total_lat += lat
+        total_tin += tin
+        total_tout += tout
+        if max_served:
+            max_calls += 1
+        if tier == "CHEAP":  # the spec's FAST tier
+            fast_calls += 1
+
+    denom = total_calls or 1
+    per_model = [
+        ModelStat(
+            model_id=mid, backend=d["backend"], tier=d["tier"], max_served=d["max_served"],
+            calls=d["calls"], cost_usd=d["cost"], latency_ms=d["lat"], tokens_in=d["tin"],
+            tokens_out=d["tout"], successes=d["ok"], failures=d["fail"], call_share=d["calls"] / denom,
+        )
+        for mid, d in sorted(by_model.items(), key=lambda kv: (-kv[1]["calls"], kv[0]))
+    ]
+    per_backend = [
+        GroupStat(key=k, calls=d["calls"], cost_usd=d["cost"], latency_ms=d["lat"], call_share=d["calls"] / denom)
+        for k, d in sorted(by_backend.items(), key=lambda kv: -kv[1]["calls"])
+    ]
+    per_tier = [
+        GroupStat(key=k, calls=d["calls"], cost_usd=d["cost"], latency_ms=d["lat"], call_share=d["calls"] / denom)
+        for k, d in sorted(by_tier.items(), key=lambda kv: -kv[1]["calls"])
+    ]
+    max_share = max_calls / denom
+    headline = (
+        f"Modular MAX served {round(max_share * 100)}% of all calls"
+        if max_calls else f"the FAST tier served {round(fast_calls / denom * 100)}% of all calls"
+    )
+    return ModelEconomics(
+        total_calls=total_calls, total_cost_usd=total_cost, total_latency_ms=total_lat,
+        total_tokens_in=total_tin, total_tokens_out=total_tout, per_model=per_model,
+        per_backend=per_backend, per_tier=per_tier, max_served_share=max_share,
+        fast_tier_share=fast_calls / denom, headline=headline,
+    )
+
+
+def aggregate_sink(
+    sink: Any, *, instance_id: Optional[str] = None, team_genome_id: Optional[str] = None,
+    registry: Optional[Any] = None, fleet: Optional[List[Any]] = None,
+) -> ModelEconomics:
+    """Aggregate an in-memory telemetry sink's invocations (optionally filtered by
+    instance / genome). Degrades to zeros if the sink has no invocations."""
+    records = list(getattr(sink, "invocations", []) or [])
+    if instance_id is not None:
+        records = [r for r in records if isinstance(r, dict) and r.get("instance_id") == instance_id]
+    if team_genome_id is not None:
+        records = [r for r in records if isinstance(r, dict) and r.get("team_genome_id") == team_genome_id]
+    return aggregate(records, registry=registry, fleet=fleet)
+
+
+def genotype_from_invocations(invocations: List[Dict[str, Any]]) -> Dict[str, str]:
+    """The latest model each agent ran on (by record order) — for the org-chart
+    model badges when the live genome isn't directly to hand."""
+    out: Dict[str, str] = {}
+    for rec in invocations:
+        if not isinstance(rec, dict):
+            continue
+        aid, mid = rec.get("agent_id"), rec.get("model_id")
+        # only string ids (a non-string/unhashable agent_id would crash the dict —
+        # the module's "malformed records skipped, not fatal" contract)
+        if isinstance(aid, str) and aid and isinstance(mid, str) and mid:
+            out[aid] = mid
+    return out

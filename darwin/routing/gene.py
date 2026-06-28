@@ -1,0 +1,174 @@
+"""The model gene — ``model_id`` as a first-class, searchable, evolvable gene.
+
+The gene already lives inside each ``AgentNode``'s embedded ``AgentSpec`` (B2)
+and is committed via B3's ``SWAP_MODEL`` mutation — B7 adds no schema, it simply
+treats an existing field as a search dimension and gives it smarter operators.
+
+The model-aware operators share B5's operator signature
+``op(genome, rng, registry) -> Optional[CandidateRearrangement]`` so B5's
+generator can sample them. Each changes ONLY ``model_id``s — the agent set and
+the wiring are invariant — and emits a ``SWAP_MODEL`` mutation for the winner.
+Under the cost/latency penalty + guarded comparator, sampling these reliably
+converges on "cheap-fast for mechanical roles, frontier for the arbiter" —
+*discovering* the routing rule, not just being told it.
+"""
+
+import random
+from typing import Any, Dict, List, Optional
+
+from darwin.agent.registry import CapabilityTier
+from darwin.agent.spec import AgentSpec
+from darwin.rearrange.operators import CandidateRearrangement, _candidate_from_derive
+from darwin.routing.policy import CHECKER, classify_role, classify_role_in_genome, suggest_tier
+from darwin.team.genome import MutationActor, MutationRecord, MutationType, TeamGenome
+
+
+# ---------------------------------------------------------------------------
+# Gene read / enumerate
+# ---------------------------------------------------------------------------
+def genotype(genome: TeamGenome) -> Dict[str, str]:
+    """The model genotype: ``{agent_id -> model_id}`` across all agents."""
+    return {a.agent_id: a.spec.model_id for a in genome.agents}
+
+
+def model_of(genome: TeamGenome, agent_id: str) -> str:
+    for a in genome.agents:
+        if a.agent_id == agent_id:
+            return a.spec.model_id
+    raise KeyError(f"agent {agent_id!r} not in genome")
+
+
+# ---------------------------------------------------------------------------
+# Registry tier helpers (skip degraded models — §10 routes around them)
+# ---------------------------------------------------------------------------
+def _ids_in_tier(registry: Any, tier: CapabilityTier) -> List[str]:
+    out = []
+    for mid in registry.all_ids():
+        entry = registry.get(mid)
+        if entry.capability_tier == tier and not entry.degraded:
+            out.append(mid)
+    return out
+
+
+def _cheapest(registry: Any, ids: List[str]) -> Optional[str]:
+    if not ids:
+        return None
+
+    def key(mid: str):
+        e = registry.get(mid)
+        return (e.est_cost_per_1k_in + e.est_cost_per_1k_out, e.est_latency_ms, mid)
+
+    return min(ids, key=key)
+
+
+# ---------------------------------------------------------------------------
+# The multi-swap primitive — set several agents' models in one candidate
+# ---------------------------------------------------------------------------
+def _set_models(
+    genome: TeamGenome, assignments: Dict[str, str], registry: Any, description: str
+) -> Optional[CandidateRearrangement]:
+    """Build a validated candidate that reassigns ``{agent_id -> model_id}``.
+    Returns None if nothing actually changes. The derive is *relative* (recomputed
+    on the freshly-loaded genome at commit), so adoption is conflict-safe."""
+    changed = {aid: m for aid, m in assignments.items() if model_of(genome, aid) != m}
+    if not changed:
+        return None
+
+    def derive(g: TeamGenome):
+        new_agents = []
+        for node in g.agents:
+            if node.agent_id in changed:
+                new_spec = AgentSpec.model_validate(
+                    {**node.spec.model_dump(), "model_id": changed[node.agent_id]},
+                    context={"registry": registry},
+                )
+                new_agents.append(node.model_copy(update={"spec": new_spec}))
+            else:
+                new_agents.append(node)
+        candidate = TeamGenome.model_validate(
+            {**g.model_dump(), "agents": [n.model_dump() for n in new_agents]},
+            context={"registry": registry},
+        )
+        record = MutationRecord(
+            mutation_type=MutationType.SWAP_MODEL, actor=MutationActor.REARRANGER, description=description,
+            from_version=g.version, to_version=g.version + 1, fitness_before=g.current_fitness,
+        )
+        return {"agents": candidate.model_dump(mode="json")["agents"]}, record
+
+    return _candidate_from_derive(genome, derive, MutationType.SWAP_MODEL, description, registry)
+
+
+# ---------------------------------------------------------------------------
+# swap_to_tier — building block: move ONE agent to the cheapest model in a tier
+# ---------------------------------------------------------------------------
+def swap_to_tier(
+    genome: TeamGenome, agent_id: str, tier: CapabilityTier, registry: Any
+) -> Optional[CandidateRearrangement]:
+    target = _cheapest(registry, _ids_in_tier(registry, tier))
+    if target is None:
+        return None
+    return _set_models(genome, {agent_id: target}, registry,
+                       f"swap {agent_id} -> {target} ({tier.value} tier)")
+
+
+# ---------------------------------------------------------------------------
+# Model-aware operators (B5 generator samples these)
+# ---------------------------------------------------------------------------
+def downgrade_mechanical(genome: TeamGenome, rng: random.Random, registry: Any) -> Optional[CandidateRearrangement]:
+    """Move a mechanical/checking agent to a cheaper FAST model — the operator
+    that drives work onto the DigitalOcean workhorse. The penalty rewards it when Q holds."""
+    mechanical = [
+        a for a in genome.agents
+        if a.agent_id != genome.arbiter_id and classify_role(a.spec) == CHECKER
+    ]
+    if not mechanical:
+        return None
+    node = rng.choice(mechanical)
+    fast_alts = [m for m in _ids_in_tier(registry, CapabilityTier.CHEAP) if m != node.spec.model_id]
+    target = _cheapest(registry, fast_alts)
+    if target is None:
+        return None
+    return _set_models(genome, {node.agent_id: target}, registry,
+                       f"downgrade {node.agent_id} -> {target} (mechanical -> FAST)")
+
+
+def upgrade_critical(genome: TeamGenome, rng: random.Random, registry: Any) -> Optional[CandidateRearrangement]:
+    """Move the arbiter (the critical, decision-resolving role) to a FRONTIER
+    model. The policy + a weak ScoreBreakdown bias this when quality must rise."""
+    arb = next((a for a in genome.agents if a.agent_id == genome.arbiter_id), None)
+    if arb is None:
+        return None
+    frontier_alts = [m for m in _ids_in_tier(registry, CapabilityTier.FRONTIER) if m != arb.spec.model_id]
+    target = _cheapest(registry, frontier_alts)
+    if target is None:
+        return None
+    return _set_models(genome, {arb.agent_id: target}, registry,
+                       f"upgrade {arb.agent_id} -> {target} (critical -> FRONTIER)")
+
+
+def retier_to_policy(genome: TeamGenome, rng: random.Random, registry: Any) -> Optional[CandidateRearrangement]:
+    """Move a random agent toward the cheapest model in its policy-suggested tier
+    (the generic swap_to_tier move, biased by the warm-start policy)."""
+    node = rng.choice(genome.agents)
+    tier = suggest_tier(classify_role_in_genome(genome, node.agent_id))
+    return swap_to_tier(genome, node.agent_id, tier, registry)
+
+
+def rebalance_genotype(genome: TeamGenome, rng: random.Random, registry: Any) -> Optional[CandidateRearrangement]:
+    """Compound move: downgrade every mechanical agent to the cheapest FAST model
+    AND upgrade the arbiter to the cheapest FRONTIER model in one candidate —
+    explores the "cheap periphery, strong center" assignment directly."""
+    fast = _cheapest(registry, _ids_in_tier(registry, CapabilityTier.CHEAP))
+    frontier = _cheapest(registry, _ids_in_tier(registry, CapabilityTier.FRONTIER))
+    assignments: Dict[str, str] = {}
+    for a in genome.agents:
+        if a.agent_id == genome.arbiter_id:
+            if frontier is not None:
+                assignments[a.agent_id] = frontier
+        elif classify_role(a.spec) == CHECKER and fast is not None:
+            assignments[a.agent_id] = fast
+    return _set_models(genome, assignments, registry, "rebalance: cheap periphery, strong center")
+
+
+# The model-aware operators B5's generator samples (in addition to ALL_OPERATORS).
+MODEL_AWARE_OPERATORS: List = [downgrade_mechanical, upgrade_critical, retier_to_policy, rebalance_genotype]

@@ -27,7 +27,7 @@ def test_assemble_produces_valid_genome():
     arb = g.node_index["arbitrator"]
     assert arb.spec.role_name == "arbitrator"
     assert arb.spec.created_by == "architect"
-    assert arb.spec.model_id == "gemini-3.1-pro"
+    assert arb.spec.model_id == "gemini-3.1-pro-preview"
     # edges resolved from role names to agent_ids
     assert any(e.from_agent_id == "cost_minimizer" and e.to_agent_id == "arbitrator" for e in g.edges)
     # layout positions assigned

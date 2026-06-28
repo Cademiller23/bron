@@ -1,0 +1,134 @@
+"""Gene — genotype read + the model-aware operators (only model_ids change)."""
+
+import random
+
+import pytest
+
+from darwin.agent.registry import CapabilityTier, default_registry, reset_default_registry
+from darwin.routing import gene as G
+from darwin.routing.fleet import FAST, FRONTIER, MID, by_tier, install_fleet
+from darwin.team.fixtures import one_agent_genome, proposer_checker_arbiter_genome
+from darwin.team.genome import MutationType
+from darwin.team.validation import validate
+
+
+@pytest.fixture(autouse=True)
+def _fleet():
+    reset_default_registry()
+    install_fleet()  # add the curated fleet to the process-wide default registry
+    yield
+    reset_default_registry()
+
+
+def _reg():
+    return default_registry()
+
+
+def _assert_valid_model_only_change(genome, candidate, expect_changed):
+    """The candidate is valid, preserves the agent set, and changes ONLY the
+    model_ids of the expected agents."""
+    assert validate(candidate.genome, _reg()).valid
+    assert {a.agent_id for a in candidate.genome.agents} == {a.agent_id for a in genome.agents}
+    before, after = G.genotype(genome), G.genotype(candidate.genome)
+    changed = {aid for aid in after if after[aid] != before[aid]}
+    assert changed == set(expect_changed)
+    assert candidate.mutation_type == MutationType.SWAP_MODEL
+
+
+# -- read -------------------------------------------------------------------
+def test_genotype_and_model_of():
+    g = proposer_checker_arbiter_genome()
+    geno = G.genotype(g)
+    assert set(geno) == {"p1", "p2", "chk", "arb"}
+    assert G.model_of(g, "chk") == geno["chk"]
+    with pytest.raises(KeyError):
+        G.model_of(g, "nope")
+
+
+# -- downgrade_mechanical ---------------------------------------------------
+def test_downgrade_mechanical_moves_checker_to_fast():
+    g = proposer_checker_arbiter_genome()
+    cand = G.downgrade_mechanical(g, random.Random(0), _reg())
+    assert cand is not None
+    _assert_valid_model_only_change(g, cand, expect_changed={"chk"})
+    assert G.model_of(cand.genome, "chk") in by_tier(FAST)
+    assert G.model_of(cand.genome, "chk") == "llama3.3-70b-instruct"  # the cheapest FAST
+
+
+def test_downgrade_mechanical_none_without_mechanical_agents():
+    g = one_agent_genome()  # the lone agent IS the arbiter -> no mechanical role
+    assert G.downgrade_mechanical(g, random.Random(0), _reg()) is None
+
+
+# -- upgrade_critical -------------------------------------------------------
+def test_upgrade_critical_moves_arbiter_to_frontier():
+    g = proposer_checker_arbiter_genome()
+    cand = G.upgrade_critical(g, random.Random(0), _reg())
+    assert cand is not None
+    _assert_valid_model_only_change(g, cand, expect_changed={"arb"})
+    assert G.model_of(cand.genome, "arb") in by_tier(FRONTIER)
+    assert G.model_of(cand.genome, "arb") == "gemini-3.1-pro-preview"
+
+
+def test_upgrade_critical_none_when_arbiter_already_frontier():
+    g = proposer_checker_arbiter_genome()
+    cand = G.upgrade_critical(g, random.Random(0), _reg())  # -> pro
+    again = G.upgrade_critical(cand.genome, random.Random(0), _reg())  # already pro
+    assert again is None
+
+
+# -- swap_to_tier -----------------------------------------------------------
+def test_swap_to_tier_moves_to_cheapest_in_tier():
+    g = proposer_checker_arbiter_genome()
+    cand = G.swap_to_tier(g, "chk", CapabilityTier.CHEAP, _reg())
+    assert cand is not None
+    _assert_valid_model_only_change(g, cand, expect_changed={"chk"})
+    assert G.model_of(cand.genome, "chk") == "llama3.3-70b-instruct"
+
+
+def test_swap_to_tier_noop_returns_none():
+    g = proposer_checker_arbiter_genome()
+    cand = G.swap_to_tier(g, "chk", CapabilityTier.CHEAP, _reg())  # -> max-8b
+    again = G.swap_to_tier(cand.genome, "chk", CapabilityTier.CHEAP, _reg())  # already cheapest CHEAP
+    assert again is None
+
+
+# -- rebalance_genotype -----------------------------------------------------
+def test_rebalance_genotype_cheap_periphery_strong_center():
+    g = proposer_checker_arbiter_genome()
+    cand = G.rebalance_genotype(g, random.Random(0), _reg())
+    assert cand is not None
+    _assert_valid_model_only_change(g, cand, expect_changed={"chk", "arb"})
+    assert G.model_of(cand.genome, "chk") in by_tier(FAST)
+    assert G.model_of(cand.genome, "arb") in by_tier(FRONTIER)
+    # proposers untouched by this move
+    assert G.model_of(cand.genome, "p1") == G.model_of(g, "p1")
+
+
+def test_rebalance_is_noop_when_already_balanced():
+    g = proposer_checker_arbiter_genome()
+    balanced = G.rebalance_genotype(g, random.Random(0), _reg()).genome
+    assert G.rebalance_genotype(balanced, random.Random(0), _reg()) is None
+
+
+# -- retier_to_policy + operator registry -----------------------------------
+def test_retier_to_policy_targets_policy_tier():
+    g = proposer_checker_arbiter_genome()
+    # try a few seeds; any non-None candidate must move its agent into the
+    # policy-suggested tier for that agent's role
+    for seed in range(8):
+        cand = G.retier_to_policy(g, random.Random(seed), _reg())
+        if cand is None:
+            continue
+        after, before = G.genotype(cand.genome), G.genotype(g)
+        moved = [aid for aid in after if after[aid] != before[aid]]
+        assert len(moved) == 1
+        aid = moved[0]
+        from darwin.routing.policy import classify_role_in_genome, suggest_tier
+        tier = suggest_tier(classify_role_in_genome(g, aid))
+        assert after[aid] in by_tier(tier)
+
+
+def test_model_aware_operators_registered():
+    names = {op.__name__ for op in G.MODEL_AWARE_OPERATORS}
+    assert names == {"downgrade_mechanical", "upgrade_critical", "retier_to_policy", "rebalance_genotype"}

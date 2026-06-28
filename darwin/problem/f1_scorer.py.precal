@@ -1,0 +1,231 @@
+"""F1 calendar scorer — wraps the f1_calendar validity/components layer into the
+engine's ScoreBreakdown, so B5/B6/B8 consume an F1 solve identically to a
+supply-chain solve.
+
+THREE TIERS (matching scorer.py's contract exactly):
+  * MALFORMED  — not a well-formed calendar (unknown/dup/missing races, bad week).
+                 Scores _MALFORMED_FITNESS (-1e19): strictly below everything.
+  * INFEASIBLE — well-formed but >=1 hard violation. Scores
+                 _infeasible_fitness(penalty) in (-1e18, 0). Penalty grows with
+                 BOTH count and per-family severity, so FEWER violations scores
+                 strictly HIGHER (the monotonic gradient the loop climbs).
+  * FEASIBLE   — zero violations. normalized_score in (0,1]; only tier that can
+                 clear the 0.90 gate.
+
+Calibration anchors (Wave F1-A, measured on this machine):
+  REFERENCE_CARBON_KG = 45,080,226.9   WORST = 134,982,847.2   REVENUE_REF = 1,829.2
+"""
+
+import math
+from typing import Any, Dict, List, Optional, Tuple
+
+from darwin.problem import f1_calendar as F1
+from darwin.problem.schemas import ObjectiveWeights, ScoreBreakdown, Violation, ViolationType
+from darwin.problem.scorer import (
+    SCORER_VERSION,
+    _INFEASIBLE_FLOOR,
+    _MALFORMED_FITNESS,
+    _MALFORMED_PENALTY,
+    _infeasible_fitness,
+    _now_iso,
+)
+
+REFERENCE_CARBON_KG: float = round(F1.calendar_components(F1.FEASIBLE_BASELINE)["total_carbon_kg"], 1)
+_REVENUE_REF: float = round(F1.calendar_components(F1.FEASIBLE_BASELINE)["total_revenue"], 1)
+
+_FAMILY_SEVERITY: Dict[str, float] = {"scheduling": 4.0, "clustering": 3.0, "routing": 2.0}
+_BASE_PENALTY_PER_VIOLATION: float = 1.0
+_CARBON_WEIGHT: float = 0.65
+_REVENUE_WEIGHT: float = 0.35
+
+
+def _is_well_formed(calendar: Any) -> Tuple[bool, str]:
+    if not isinstance(calendar, (list, tuple)) or not calendar:
+        return False, "calendar is empty or not a list"
+    races = []
+    for item in calendar:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            return False, f"entry is not a (race, week) pair: {item!r}"
+        r, w = item
+        if r not in F1.CIRCUITS:
+            return False, f"unknown race key {r!r}"
+        if not isinstance(w, int) or isinstance(w, bool):
+            return False, f"week is not an int: {w!r}"
+        # Structural sanity only: reject genuine garbage. The 8..50 SEASON window
+        # is a SCHEDULING violation (out_of_season), owned by the dataset's
+        # scheduling_violations — NOT a malformed-data condition. A week like 53
+        # is a bad schedule the optimizer must climb away from, not garbage.
+        if w < 1 or w > 60:
+            return False, f"week {w} structurally out of range (1..60 sanity bound)"
+        races.append(r)
+    if len(races) != len(F1.RACES):
+        return False, f"expected {len(F1.RACES)} races, got {len(races)}"
+    if len(set(races)) != len(races):
+        dupes = sorted({x for x in races if races.count(x) > 1})
+        return False, f"duplicate races: {dupes}"
+    missing = set(F1.RACES) - set(races)
+    if missing:
+        return False, f"missing races: {sorted(missing)}"
+    return True, ""
+
+
+def _violations_to_models(validity: Dict[str, Any]) -> List[Violation]:
+    out: List[Violation] = []
+    for family in ("routing", "scheduling", "clustering"):
+        for v in validity.get(family, []):
+            vtype = v.get("type", "violation")
+            loc = (v.get("race") or v.get("region")
+                   or (f"{v.get('from')}->{v.get('to')}" if v.get("from") else "")
+                   or v.get("race_a") or "calendar")
+            out.append(Violation(
+                violation_type=ViolationType.CUSTOM_CONSTRAINT,
+                location=str(loc),
+                magnitude=_FAMILY_SEVERITY[family],
+                message=f"[{family}] {vtype}: {v}",
+            ))
+    return out
+
+
+def _feasible_normalized_score(components: Dict[str, Any]) -> Tuple[float, float, Dict[str, float]]:
+    carbon = float(components["total_carbon_kg"])
+    revenue = float(components["total_revenue"])
+    carbon_ratio = REFERENCE_CARBON_KG / carbon if carbon > 1e-9 else 1.0
+    carbon_score = max(0.0, min(1.0, carbon_ratio))
+    revenue_ratio = revenue / _REVENUE_REF if _REVENUE_REF > 1e-9 else 1.0
+    revenue_score = max(0.0, min(1.0, revenue_ratio))
+    normalized_score = max(0.0, min(1.0, _CARBON_WEIGHT * carbon_score + _REVENUE_WEIGHT * revenue_score))
+    weighted_objective = 1.0 - normalized_score
+    return normalized_score, weighted_objective, {
+        "carbon_score": carbon_score, "revenue_score": revenue_score,
+        "carbon_ratio": carbon_ratio, "revenue_ratio": revenue_ratio,
+    }
+
+
+def score_f1(calendar: Any, *, solution_id: str = "f1_calendar_solution",
+             instance_id: str = "f1_2026_calendar",
+             weights: Optional[ObjectiveWeights] = None) -> ScoreBreakdown:
+    weights = weights or ObjectiveWeights.balanced()
+
+    ok, why = _is_well_formed(calendar)
+    if not ok:
+        return ScoreBreakdown(
+            solution_id=solution_id, instance_id=instance_id, feasible=False,
+            violations=[Violation(violation_type=ViolationType.MALFORMED_SOLUTION,
+                                  location="calendar", magnitude=0.0,
+                                  message=f"malformed calendar: {why}")],
+            raw_cost=0.0, raw_lead_time=0.0, raw_risk=0.0, weighted_objective=0.0,
+            normalized_score=0.0, total_penalty=_MALFORMED_PENALTY,
+            final_fitness=_MALFORMED_FITNESS, objective_weights=weights,
+            scorer_version=SCORER_VERSION, computed_at=_now_iso(),
+            diagnostics={"malformed": True, "reason": why},
+        )
+
+    calendar = [(r, int(w)) for r, w in calendar]
+    components = F1.calendar_components(calendar)
+    validity = F1.calendar_validity(calendar)
+    carbon = float(components["total_carbon_kg"])
+    raw_risk = float(components.get("weather_soft_penalty", 0.0))
+
+    diagnostics: Dict[str, Any] = {
+        "components": components, "n_violations": validity["n_violations"],
+        "violations_by_family": {"routing": len(validity["routing"]),
+                                 "scheduling": len(validity["scheduling"]),
+                                 "clustering": len(validity["clustering"])},
+        "reference_carbon_kg": REFERENCE_CARBON_KG, "revenue_ref": _REVENUE_REF,
+    }
+
+    if not validity["is_valid"]:
+        violations = _violations_to_models(validity)
+        total_penalty = _BASE_PENALTY_PER_VIOLATION * len(violations) + math.fsum(v.magnitude for v in violations)
+        final_fitness = _infeasible_fitness(total_penalty)
+        stored_penalty = total_penalty if math.isfinite(total_penalty) else _INFEASIBLE_FLOOR
+        diagnostics["tier"] = "infeasible"
+        return ScoreBreakdown(
+            solution_id=solution_id, instance_id=instance_id, feasible=False,
+            violations=violations, raw_cost=carbon, raw_lead_time=0.0, raw_risk=raw_risk,
+            weighted_objective=0.0, normalized_score=0.0, total_penalty=stored_penalty,
+            final_fitness=final_fitness, objective_weights=weights,
+            scorer_version=SCORER_VERSION, computed_at=_now_iso(), diagnostics=diagnostics,
+        )
+
+    normalized_score, weighted_objective, parts = _feasible_normalized_score(components)
+    diagnostics["tier"] = "feasible"; diagnostics.update(parts)
+    return ScoreBreakdown(
+        solution_id=solution_id, instance_id=instance_id, feasible=True, violations=[],
+        raw_cost=carbon, raw_lead_time=0.0, raw_risk=raw_risk,
+        weighted_objective=weighted_objective, normalized_score=normalized_score,
+        total_penalty=0.0, final_fitness=normalized_score, objective_weights=weights,
+        scorer_version=SCORER_VERSION, computed_at=_now_iso(), diagnostics=diagnostics,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Runner-signature adapter: matches runner.py line 146
+#   self.scorer(instance, final_solution, weights)
+# Inject via TeamRunner(scorer=score_f1_solution) in Wave F1-D. Decodes the
+# calendar from the Solution (via the codec) and delegates to score_f1.
+# ---------------------------------------------------------------------------
+from darwin.problem.f1_codec import solution_to_calendar  # noqa: E402
+
+
+def score_f1_solution(instance, solution, weights=None):
+    """Decode the calendar out of the Solution and score it. Never raises."""
+    try:
+        calendar = solution_to_calendar(solution)
+    except Exception:
+        calendar = []  # -> score_f1's MALFORMED tier handles a garbage Solution
+    return score_f1(
+        calendar,
+        solution_id=getattr(solution, "solution_id", "f1_calendar_solution"),
+        instance_id=getattr(instance, "instance_id", "f1_2026_calendar"),
+        weights=weights,
+    )
+
+
+if __name__ == "__main__":
+    print(f"REFERENCE_CARBON_KG = {REFERENCE_CARBON_KG:,.1f}")
+    print(f"_REVENUE_REF        = {_REVENUE_REF:,.1f}\n")
+
+    base = score_f1(F1.FEASIBLE_BASELINE)
+    print("=== FEASIBLE_BASELINE ===")
+    print(f"  feasible={base.feasible}  fitness={base.final_fitness:.4f}  "
+          f"norm={base.normalized_score:.4f}  violations={len(base.violations)}")
+
+    bad = score_f1([(r, 30) for r in sorted(F1.RACES)])
+    print("=== BAD (alpha, all wk30) ===")
+    print(f"  feasible={bad.feasible}  fitness={bad.final_fitness:.4f}  "
+          f"penalty={bad.total_penalty:.1f}  violations={len(bad.violations)}")
+
+    mal = score_f1([("melbourne", 8)])
+    print("=== MALFORMED (1 race) ===")
+    print(f"  feasible={mal.feasible}  fitness={mal.final_fitness:.2e}")
+
+    swing_order = (["melbourne","shanghai","suzuka","singapore"]
+        + ["sakhir","jeddah","losail","yas_marina","baku"]
+        + ["monaco","barcelona","spielberg","silverstone","spa","zandvoort","monza","budapest","madrid"]
+        + ["montreal","miami","austin","mexico_city","sao_paulo","las_vegas"])
+    # Spread 24 races across weeks 8..49 (fits the 1..52 calendar year and the
+    # 8..50 season window), skipping the summer break. Compressed so the finale
+    # never overflows past week 50 (the Wave F1-A fixture overflowed to wk55).
+    n = len(swing_order)
+    lo, hi = F1.SEASON_WEEK_START, F1.SEASON_WEEK_END - 1  # 8..49
+    weeks_seq, used = [], set()
+    for i in range(n):
+        wi = lo + round(i * (hi - lo) / (n - 1))
+        while wi in F1.SUMMER_BREAK_WEEKS or wi in used:
+            wi += 1
+        used.add(wi); weeks_seq.append(wi)
+    sw = score_f1(list(zip(swing_order, weeks_seq)))
+    print("=== SWING (region-clustered) ===")
+    print(f"  feasible={sw.feasible}  fitness={sw.final_fitness:.4f}  violations={len(sw.violations)}")
+
+    print("\n=== INVARIANTS ===")
+    assert base.feasible and base.final_fitness > 0.9, "baseline must clear 0.90"
+    print(f"  [OK] baseline feasible, clears 0.90 (fitness={base.final_fitness:.4f})")
+    assert sw.final_fitness > bad.final_fitness, "fewer violations must score higher"
+    print(f"  [OK] SWING ({len(sw.violations)} viol, {sw.final_fitness:.2f}) > BAD ({len(bad.violations)} viol, {bad.final_fitness:.2f})")
+    assert bad.final_fitness > mal.final_fitness, "infeasible must beat malformed"
+    print(f"  [OK] BAD ({bad.final_fitness:.2f}) > MALFORMED ({mal.final_fitness:.2e})")
+    assert mal.final_fitness == _MALFORMED_FITNESS, "malformed hits the dedicated floor"
+    print(f"  [OK] MALFORMED at dedicated floor ({mal.final_fitness:.2e})")
+    print("\nALL INVARIANTS HOLD — scorer is monotonic and tiered correctly.")

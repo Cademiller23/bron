@@ -45,7 +45,7 @@ GENOME_FLOOR_FITNESS: float = -1.0e12
 
 # --- B4 Architect ------------------------------------------------------------
 # The frontier reasoner the Architect itself runs on (rare, hard design calls).
-ARCHITECT_MODEL_ID: str = "gemini-3.1-pro"
+ARCHITECT_MODEL_ID: str = "gemini-3.1-pro-preview"
 # The fast model the authored agents execute on (the many calls).
 FAST_MODEL_ID: str = DEFAULT_MODEL_ID  # "gemini-3.5-flash"
 MAX_DESIGN_REPAIRS: int = 2  # bounded design validation-repair loop
@@ -66,3 +66,11 @@ MAX_ESCALATIONS: int = 5
 MAX_TEAM_SIZE: int = 8
 MAX_WALL_CLOCK_SECONDS: float = 120.0
 MAX_TOTAL_COST_USD: float = 5.0
+
+# --- B7 multi-model routing -------------------------------------------------
+# The cost/latency penalty on the SELECTION fitness (never the 0.90 task gate).
+# Kept small (sum <= 0.1) so it nudges/tie-breaks among similar-quality teams
+# without ever overriding task quality; normalized per round to [0,1].
+LAMBDA_COST: float = 0.05
+LAMBDA_LATENCY: float = 0.03
+EFFICIENCY_EPSILON: float = 1e-9  # min strict improvement in selection fitness to adopt/keep

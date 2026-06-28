@@ -68,6 +68,8 @@ class RearrangementLoop:
         reorganizer: Optional[Callable] = None,
         event_sink: Optional[Callable] = None,
         rng: Any = None,
+        selector: Any = None,
+        extra_operators: Optional[List[Callable]] = None,
     ) -> None:
         self.runner = runner
         self.store = store
@@ -80,6 +82,12 @@ class RearrangementLoop:
         self._threshold_stop = threshold_stop
         self.reorganizer = reorganizer
         self.event_sink = event_sink
+        # B7 (opt-in): a selection strategy governing argmax + adoption (e.g. the
+        # cost/latency-penalized EfficiencyStrategy) and extra model-aware
+        # operators for the generator. ``selector=None`` keeps the exact pre-B7
+        # raw-fitness behavior — no import of the routing layer, no behavior change.
+        self._selector = selector
+        self._extra_operators = list(extra_operators or [])
         import random as _random
 
         self._rng = rng or _random.Random()
@@ -102,7 +110,8 @@ class RearrangementLoop:
         while True:
             hints = await self._hints(best_eval.score_breakdown)
             candidates = generate_candidates(
-                best_genome, self._k, rng=self._rng, hints=hints, registry=self.registry
+                best_genome, self._k, rng=self._rng, hints=hints, registry=self.registry,
+                extra_operators=self._extra_operators,
             )
             if not candidates:
                 break  # nothing valid to try (degenerate genome)
@@ -113,11 +122,20 @@ class RearrangementLoop:
                 *[self.runner.evaluate(c.genome, instance, weights, persist_outcome=False) for c in candidates]
             )
             total_cost += sum(e.total_cost_usd for e in evals)
-            best_idx = max(range(len(candidates)), key=lambda i: evals[i].fitness)
+            # Default: argmax raw fitness (pre-B7, byte-identical). B7: the injected
+            # selector chooses by the guarded efficiency-adjusted comparator.
+            if self._selector is None:
+                best_idx = max(range(len(candidates)), key=lambda i: evals[i].fitness)
+            else:
+                best_idx = self._selector.best_index(evals)
             candidate, candidate_eval = candidates[best_idx], evals[best_idx]
             iteration += 1
 
-            if candidate_eval.fitness > best_eval.fitness + self._epsilon:  # ELITISM: strict improvement only
+            if self._selector is None:
+                adopt = candidate_eval.fitness > best_eval.fitness + self._epsilon
+            else:
+                adopt = self._selector.improves(candidate_eval, best_eval)
+            if adopt:  # ELITISM: strict improvement only
                 # record the true pre-adoption fitness as fitness_before
                 best_genome = await self._commit(best_genome, candidate, candidate_eval, best_eval.fitness)
                 best_eval = candidate_eval

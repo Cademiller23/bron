@@ -1,0 +1,142 @@
+"""Observability — per-model aggregation, the MAX headline, failure-safety."""
+
+from darwin.agent.telemetry import InMemoryTelemetrySink
+from darwin.routing import observability as O
+from darwin.routing.fleet import fleet_registry
+
+REG = fleet_registry()
+
+
+def _rec(model_id, cost=0.0, latency=0.0, tin=0, tout=0, success=True, agent_id="a", instance_id="i"):
+    return {"model_id": model_id, "est_cost": cost, "latency_ms": latency, "tokens_in": tin,
+            "tokens_out": tout, "success": success, "agent_id": agent_id, "instance_id": instance_id}
+
+
+def _dataset():
+    # 7 MAX (FAST) + 2 Flash (MID) + 1 Pro (FRONTIER) = 10 calls
+    recs = [_rec("llama3.3-70b-instruct", cost=0.001, latency=350.0, agent_id=f"chk{i}") for i in range(7)]
+    recs += [_rec("gemini-3.5-flash", cost=0.005, latency=900.0, agent_id=f"p{i}") for i in range(2)]
+    recs += [_rec("gemini-3.1-pro-preview", cost=0.05, latency=2600.0, agent_id="arb")]
+    return recs
+
+
+def _agg(recs):
+    return O.aggregate(recs, registry=REG)
+
+
+# -- headline / shares ------------------------------------------------------
+def test_empty_degrades_to_zeros():
+    e = O.aggregate([], registry=REG)
+    assert e.total_calls == 0 and e.max_served_share == 0.0
+    assert e.headline == "no model calls recorded"
+
+
+def test_max_served_share_and_headline():
+    e = _agg(_dataset())
+    assert e.total_calls == 10
+    assert abs(e.max_served_share - 0.7) < 1e-9
+    assert abs(e.fast_tier_share - 0.7) < 1e-9  # the 7 MAX calls are the FAST tier
+    assert "70%" in e.headline and "DigitalOcean" in e.headline
+
+
+def test_per_model_sorted_by_calls_with_shares():
+    e = _agg(_dataset())
+    assert e.per_model[0].model_id == "llama3.3-70b-instruct"
+    assert e.per_model[0].calls == 7 and abs(e.per_model[0].call_share - 0.7) < 1e-9
+    assert e.per_model[0].max_served is True and e.per_model[0].tier == "CHEAP"
+
+
+def test_frontier_dominates_per_call_cost_fast_dominates_volume():
+    e = _agg(_dataset())
+    by_id = {m.model_id: m for m in e.per_model}
+    # FRONTIER's single call costs more than ALL the FAST calls combined
+    assert by_id["gemini-3.1-pro-preview"].cost_usd > by_id["llama3.3-70b-instruct"].cost_usd
+    # ...while FAST dominates call volume
+    assert by_id["llama3.3-70b-instruct"].calls > by_id["gemini-3.1-pro-preview"].calls
+
+
+def test_per_backend_and_per_tier():
+    e = _agg(_dataset())
+    backends = {g.key: g for g in e.per_backend}
+    assert backends["OPENAI_COMPAT"].calls == 7 and backends["GEMINI"].calls == 3
+    tiers = {g.key: g for g in e.per_tier}
+    assert tiers["CHEAP"].calls == 7 and tiers["MID"].calls == 2 and tiers["FRONTIER"].calls == 1
+
+
+def test_minimax_is_openai_compat_but_not_max_served():
+    recs = [_rec("llama3.3-70b-instruct"), _rec("llama3.3-70b-instruct"), _rec("gemini-3.1-flash-lite")]
+    e = O.aggregate(recs, registry=REG)
+    by_id = {m.model_id: m for m in e.per_model}
+    assert by_id["gemini-3.1-flash-lite"].backend == "GEMINI" and by_id["gemini-3.1-flash-lite"].max_served is False
+    assert by_id["gemini-3.1-flash-lite"].tier == "CHEAP"
+    assert abs(e.max_served_share - 2 / 3) < 1e-9  # only the MAX models count
+    assert abs(e.fast_tier_share - 1.0) < 1e-9     # all three are FAST tier
+
+
+# -- failure-safety ---------------------------------------------------------
+def test_malformed_records_are_skipped_not_fatal():
+    recs = [_rec("llama3.3-70b-instruct"), "garbage", None,
+            {"model_id": "gemini-3.1-flash-lite", "est_cost": "bad", "latency_ms": None, "tokens_in": "x"},
+            {"latency_ms": 10.0}]  # missing model_id -> 'unknown'
+    e = O.aggregate(recs, registry=REG)
+    assert e.total_calls == 3  # the two non-dicts skipped
+    assert e.total_cost_usd >= 0.0  # 'bad' cost coerced to 0, no crash
+    ids = {m.model_id for m in e.per_model}
+    assert "unknown" in ids
+
+
+def test_success_and_failure_counts():
+    recs = [_rec("gemini-3.1-flash-lite", success=True), _rec("gemini-3.1-flash-lite", success=False)]
+    e = O.aggregate(recs, registry=REG)
+    m = e.per_model[0]
+    assert m.successes == 1 and m.failures == 1
+
+
+def test_infinite_and_nan_numerics_degrade_not_crash():
+    # regression: int(float('inf')) raises OverflowError -> must degrade to 0
+    recs = [
+        _rec("gemini-3.1-flash-lite", tin=float("inf"), tout=float("nan"), cost=float("inf"), latency=float("-inf")),
+        _rec("llama3.3-70b-instruct", tin=5, cost=0.01),
+    ]
+    e = O.aggregate(recs, registry=REG)  # must not raise
+    assert e.total_calls == 2
+    by_id = {m.model_id: m for m in e.per_model}
+    assert by_id["gemini-3.1-flash-lite"].tokens_in == 0 and by_id["gemini-3.1-flash-lite"].cost_usd == 0.0
+    assert by_id["llama3.3-70b-instruct"].tokens_in == 5
+
+
+def test_non_string_or_unhashable_model_id_degrades_not_crash():
+    # regression: a corrupted upstream doc with a non-string model_id must not crash
+    recs = [{"model_id": 123, "est_cost": 0.0}, {"model_id": ["x"], "est_cost": 0.0},
+            {"model_id": True, "est_cost": 0.0}, {"model_id": None, "est_cost": 0.0}]
+    e = O.aggregate(recs, registry=REG)  # must not raise
+    assert e.total_calls == 4
+    ids = {m.model_id for m in e.per_model}
+    assert "unknown" in ids and all(isinstance(i, str) for i in ids)
+
+
+# -- sink integration -------------------------------------------------------
+async def test_aggregate_sink_filters_by_instance():
+    sink = InMemoryTelemetrySink()
+    await sink.log_invocation(_rec("llama3.3-70b-instruct", instance_id="A"))
+    await sink.log_invocation(_rec("gemini-3.1-pro-preview", instance_id="B"))
+    e = O.aggregate_sink(sink, instance_id="A", registry=REG)
+    assert e.total_calls == 1 and e.per_model[0].model_id == "llama3.3-70b-instruct"
+
+
+def test_aggregate_sink_empty_is_zeros():
+    e = O.aggregate_sink(InMemoryTelemetrySink(), registry=REG)
+    assert e.total_calls == 0
+
+
+def test_genotype_from_invocations_latest_wins():
+    recs = [_rec("gemini-3.5-flash", agent_id="chk"), _rec("llama3.3-70b-instruct", agent_id="chk")]
+    assert O.genotype_from_invocations(recs)["chk"] == "llama3.3-70b-instruct"
+
+
+def test_genotype_from_invocations_skips_unhashable_or_nonstring_ids():
+    # regression: a non-string/unhashable agent_id must be skipped, not crash
+    recs = ["garbage", {"agent_id": ["x"], "model_id": "m"}, {"agent_id": 5, "model_id": "m"},
+            {"agent_id": "chk", "model_id": "llama3.3-70b-instruct"}, {"agent_id": "p1", "model_id": 7}]
+    out = O.genotype_from_invocations(recs)  # must not raise
+    assert out == {"chk": "llama3.3-70b-instruct"}

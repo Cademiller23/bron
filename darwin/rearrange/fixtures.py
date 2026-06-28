@@ -8,7 +8,7 @@ from darwin.problem.schemas import ObjectiveWeights, ScoreBreakdown, Solution
 from darwin.team.evaluation import GenomeEvaluation
 from darwin.team.genome import ArbiterTier, TeamGenome
 
-FRONTIER = "gemini-3.1-pro"
+FRONTIER = "gemini-3.1-pro-preview"
 
 
 def _now() -> str:

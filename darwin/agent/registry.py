@@ -33,6 +33,7 @@ class ModelEntry(BaseModel):
     model_id: str = Field(min_length=1)
     provider: Provider
     endpoint: str = ""  # base_url for OPENAI_COMPAT; "" for the native Gemini SDK
+    api_key_env: str = ""  # env var holding this model's key (per-model; "" -> the adapter default)
     capability_tier: CapabilityTier = CapabilityTier.MID
     est_cost_per_1k_in: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     est_cost_per_1k_out: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
@@ -98,8 +99,8 @@ def _seed_entries() -> Dict[str, ModelEntry]:
         ),
         # The frontier reasoner — the Architect (B4) designs teams on this, and
         # deep-reasoning roles (the arbitrator) are assigned to it.
-        "gemini-3.1-pro": ModelEntry(
-            model_id="gemini-3.1-pro",
+        "gemini-3.1-pro-preview": ModelEntry(
+            model_id="gemini-3.1-pro-preview",
             provider=Provider.GEMINI,
             endpoint="",
             capability_tier=CapabilityTier.FRONTIER,
