@@ -1,0 +1,564 @@
+[
+  {
+    "type": "run_started",
+    "problemLabel": "F1 2026 Calendar Optimization (24 races, 3 constraint families)",
+    "threshold": 0.76,
+    "corpus": [
+      {
+        "id": "routing",
+        "role": "minimizes travel",
+        "model": "gemini-3.5-flash",
+        "origin": "seed"
+      },
+      {
+        "id": "scheduling",
+        "role": "week placement",
+        "model": "gemini-3.5-flash",
+        "origin": "seed"
+      },
+      {
+        "id": "clustering",
+        "role": "region swings",
+        "model": "gemini-3.5-flash",
+        "origin": "seed"
+      },
+      {
+        "id": "arbitrator",
+        "role": "synthesizes calendar",
+        "model": "gemini-3.5-flash",
+        "origin": "seed"
+      }
+    ]
+  },
+  {
+    "type": "log",
+    "text": "Loaded 24 circuits \u2014 routing, scheduling, clustering constraints",
+    "kind": "info"
+  },
+  {
+    "type": "phase",
+    "text": "Generation 1 \u2014 seed swarm proposes calendars"
+  },
+  {
+    "type": "candidate",
+    "label": "Gen 1 \u00b7 seed team",
+    "nodes": [
+      {
+        "id": "input",
+        "model": "Input",
+        "description": "F1 calendar request",
+        "kind": "input"
+      },
+      {
+        "id": "routing",
+        "model": "Routing Specialist",
+        "description": "minimizes travel"
+      },
+      {
+        "id": "scheduling",
+        "model": "Scheduling Specialist",
+        "description": "week placement"
+      },
+      {
+        "id": "clustering",
+        "model": "Clustering Specialist",
+        "description": "region swings"
+      },
+      {
+        "id": "arbitrator",
+        "model": "Arbitrator",
+        "description": "synthesizes calendar"
+      },
+      {
+        "id": "output",
+        "model": "Output",
+        "description": "final calendar",
+        "kind": "output",
+        "terminal": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "input",
+        "to": "routing"
+      },
+      {
+        "from": "input",
+        "to": "scheduling"
+      },
+      {
+        "from": "input",
+        "to": "clustering"
+      },
+      {
+        "from": "routing",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "scheduling",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "clustering",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "arbitrator",
+        "to": "output"
+      }
+    ]
+  },
+  {
+    "type": "candidate_scored",
+    "fitness": -16.0
+  },
+  {
+    "type": "log",
+    "text": "Seed team: 7 violations (infeasible) \u2014 fitness -16",
+    "kind": "score"
+  },
+  {
+    "type": "generation_committed",
+    "iteration": {
+      "id": 1,
+      "name": "Generation 1",
+      "description": "Seed swarm",
+      "fitness": -16.0,
+      "nodes": [
+        {
+          "id": "input",
+          "model": "Input",
+          "description": "F1 calendar request",
+          "kind": "input"
+        },
+        {
+          "id": "routing",
+          "model": "Routing Specialist",
+          "description": "minimizes travel"
+        },
+        {
+          "id": "scheduling",
+          "model": "Scheduling Specialist",
+          "description": "week placement"
+        },
+        {
+          "id": "clustering",
+          "model": "Clustering Specialist",
+          "description": "region swings"
+        },
+        {
+          "id": "arbitrator",
+          "model": "Arbitrator",
+          "description": "synthesizes calendar"
+        },
+        {
+          "id": "output",
+          "model": "Output",
+          "description": "final calendar",
+          "kind": "output",
+          "terminal": true
+        }
+      ],
+      "edges": [
+        {
+          "from": "input",
+          "to": "routing"
+        },
+        {
+          "from": "input",
+          "to": "scheduling"
+        },
+        {
+          "from": "input",
+          "to": "clustering"
+        },
+        {
+          "from": "routing",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "scheduling",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "clustering",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "arbitrator",
+          "to": "output"
+        }
+      ]
+    }
+  },
+  {
+    "type": "phase",
+    "text": "Generation 2 \u2014 rearranging + reducing violations"
+  },
+  {
+    "type": "candidate",
+    "label": "Gen 2 \u00b7 rearranged",
+    "nodes": [
+      {
+        "id": "input",
+        "model": "Input",
+        "description": "F1 calendar request",
+        "kind": "input"
+      },
+      {
+        "id": "routing",
+        "model": "Routing Specialist",
+        "description": "minimizes travel"
+      },
+      {
+        "id": "scheduling",
+        "model": "Scheduling Specialist",
+        "description": "week placement"
+      },
+      {
+        "id": "clustering",
+        "model": "Clustering Specialist",
+        "description": "region swings"
+      },
+      {
+        "id": "arbitrator",
+        "model": "Arbitrator",
+        "description": "synthesizes calendar"
+      },
+      {
+        "id": "output",
+        "model": "Output",
+        "description": "final calendar",
+        "kind": "output",
+        "terminal": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "input",
+        "to": "routing"
+      },
+      {
+        "from": "input",
+        "to": "scheduling"
+      },
+      {
+        "from": "input",
+        "to": "clustering"
+      },
+      {
+        "from": "routing",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "scheduling",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "clustering",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "arbitrator",
+        "to": "output"
+      }
+    ]
+  },
+  {
+    "type": "candidate_scored",
+    "fitness": -5.0
+  },
+  {
+    "type": "log",
+    "text": "Down to 1 violation \u2014 fitness -5, still infeasible",
+    "kind": "score"
+  },
+  {
+    "type": "generation_committed",
+    "iteration": {
+      "id": 2,
+      "name": "Generation 2",
+      "description": "Rearranged topology",
+      "fitness": -5.0,
+      "nodes": [
+        {
+          "id": "input",
+          "model": "Input",
+          "description": "F1 calendar request",
+          "kind": "input"
+        },
+        {
+          "id": "routing",
+          "model": "Routing Specialist",
+          "description": "minimizes travel"
+        },
+        {
+          "id": "scheduling",
+          "model": "Scheduling Specialist",
+          "description": "week placement"
+        },
+        {
+          "id": "clustering",
+          "model": "Clustering Specialist",
+          "description": "region swings"
+        },
+        {
+          "id": "arbitrator",
+          "model": "Arbitrator",
+          "description": "synthesizes calendar"
+        },
+        {
+          "id": "output",
+          "model": "Output",
+          "description": "final calendar",
+          "kind": "output",
+          "terminal": true
+        }
+      ],
+      "edges": [
+        {
+          "from": "input",
+          "to": "routing"
+        },
+        {
+          "from": "input",
+          "to": "scheduling"
+        },
+        {
+          "from": "input",
+          "to": "clustering"
+        },
+        {
+          "from": "routing",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "scheduling",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "clustering",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "arbitrator",
+          "to": "output"
+        }
+      ]
+    }
+  },
+  {
+    "type": "phase",
+    "text": "-5 below threshold \u2014 swapping agent models"
+  },
+  {
+    "type": "log",
+    "text": "Scheduling specialist \u2192 llama3.3-70b (DigitalOcean)",
+    "kind": "corpus"
+  },
+  {
+    "type": "agent_created",
+    "agent": {
+      "id": "scheduling",
+      "role": "week placement",
+      "model": "llama3.3-70b-instruct",
+      "origin": "grown"
+    }
+  },
+  {
+    "type": "log",
+    "text": "Arbitrator \u2192 gemini-3.1-pro (frontier synthesis)",
+    "kind": "corpus"
+  },
+  {
+    "type": "agent_created",
+    "agent": {
+      "id": "arbitrator",
+      "role": "synthesizes calendar",
+      "model": "gemini-3.1-pro-preview",
+      "origin": "grown"
+    }
+  },
+  {
+    "type": "phase",
+    "text": "Generation 3 \u2014 re-evolving with upgraded models"
+  },
+  {
+    "type": "candidate",
+    "label": "Gen 3 \u00b7 evolved",
+    "nodes": [
+      {
+        "id": "input",
+        "model": "Input",
+        "description": "F1 calendar request",
+        "kind": "input"
+      },
+      {
+        "id": "routing",
+        "model": "Routing Specialist",
+        "description": "gemini-3.5-flash"
+      },
+      {
+        "id": "scheduling",
+        "model": "Scheduling Specialist",
+        "description": "llama3.3-70b"
+      },
+      {
+        "id": "clustering",
+        "model": "Clustering Specialist",
+        "description": "gemini-3.5-flash"
+      },
+      {
+        "id": "arbitrator",
+        "model": "Arbitrator",
+        "description": "gemini-3.1-pro"
+      },
+      {
+        "id": "output",
+        "model": "Output",
+        "description": "final calendar",
+        "kind": "output",
+        "terminal": true
+      }
+    ],
+    "edges": [
+      {
+        "from": "input",
+        "to": "routing"
+      },
+      {
+        "from": "input",
+        "to": "scheduling"
+      },
+      {
+        "from": "input",
+        "to": "clustering"
+      },
+      {
+        "from": "routing",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "scheduling",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "clustering",
+        "to": "arbitrator",
+        "primary": true
+      },
+      {
+        "from": "arbitrator",
+        "to": "output"
+      }
+    ]
+  },
+  {
+    "type": "candidate_scored",
+    "fitness": 0.95
+  },
+  {
+    "type": "log",
+    "text": "FEASIBLE calendar \u2014 fitness 0.95 \u2713 cleared 0.76 gate",
+    "kind": "success"
+  },
+  {
+    "type": "generation_committed",
+    "iteration": {
+      "id": 3,
+      "name": "Generation 3",
+      "description": "Evolved models (llama + gemini-pro)",
+      "fitness": 0.95,
+      "nodes": [
+        {
+          "id": "input",
+          "model": "Input",
+          "description": "F1 calendar request",
+          "kind": "input"
+        },
+        {
+          "id": "routing",
+          "model": "Routing Specialist",
+          "description": "gemini-3.5-flash"
+        },
+        {
+          "id": "scheduling",
+          "model": "Scheduling Specialist",
+          "description": "llama3.3-70b"
+        },
+        {
+          "id": "clustering",
+          "model": "Clustering Specialist",
+          "description": "gemini-3.5-flash"
+        },
+        {
+          "id": "arbitrator",
+          "model": "Arbitrator",
+          "description": "gemini-3.1-pro"
+        },
+        {
+          "id": "output",
+          "model": "Output",
+          "description": "final calendar",
+          "kind": "output",
+          "terminal": true
+        }
+      ],
+      "edges": [
+        {
+          "from": "input",
+          "to": "routing"
+        },
+        {
+          "from": "input",
+          "to": "scheduling"
+        },
+        {
+          "from": "input",
+          "to": "clustering"
+        },
+        {
+          "from": "routing",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "scheduling",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "clustering",
+          "to": "arbitrator",
+          "primary": true
+        },
+        {
+          "from": "arbitrator",
+          "to": "output"
+        }
+      ]
+    }
+  },
+  {
+    "type": "phase",
+    "text": "Converged — revenue 2053 (+7.7% vs baseline)"
+  },
+  {
+    "type": "run_complete",
+    "bestFitness": 0.95
+  }
+]

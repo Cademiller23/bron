@@ -1,0 +1,493 @@
+{
+  "label": "Optimized (swarm-evolved)",
+  "fitness": 0.95,
+  "cleared": true,
+  "totalCarbonKg": 56743431.9,
+  "totalRevenue": 2053.3,
+  "stops": [
+    {
+      "key": "baku",
+      "round": 1,
+      "week": 8,
+      "month": 2,
+      "region": "MIDEAST",
+      "grandPrix": "Azerbaijan Grand Prix",
+      "city": "Baku",
+      "name": "Baku City",
+      "latitude": 40.3725,
+      "longitude": 49.8533,
+      "revenue": 60.0,
+      "legCarbonKg": 0.0
+    },
+    {
+      "key": "sakhir",
+      "round": 2,
+      "week": 10,
+      "month": 3,
+      "region": "MIDEAST",
+      "grandPrix": "Bahrain Grand Prix",
+      "city": "Sakhir",
+      "name": "Bahrain Intl",
+      "latitude": 26.0325,
+      "longitude": 50.5106,
+      "revenue": 71.5,
+      "legCarbonKg": 1116985.5
+    },
+    {
+      "key": "losail",
+      "round": 3,
+      "week": 12,
+      "month": 3,
+      "region": "MIDEAST",
+      "grandPrix": "Qatar Grand Prix",
+      "city": "Lusail",
+      "name": "Lusail Intl",
+      "latitude": 25.49,
+      "longitude": 51.4542,
+      "revenue": 52.0,
+      "legCarbonKg": 78475.4
+    },
+    {
+      "key": "yas_marina",
+      "round": 4,
+      "week": 13,
+      "month": 3,
+      "region": "MIDEAST",
+      "grandPrix": "Abu Dhabi Grand Prix",
+      "city": "Abu Dhabi",
+      "name": "Yas Marina",
+      "latitude": 24.4672,
+      "longitude": 54.6031,
+      "revenue": 70.0,
+      "legCarbonKg": 235997.5
+    },
+    {
+      "key": "jeddah",
+      "round": 5,
+      "week": 15,
+      "month": 4,
+      "region": "MIDEAST",
+      "grandPrix": "Saudi Arabian Grand Prix",
+      "city": "Jeddah",
+      "name": "Jeddah Corniche",
+      "latitude": 21.6319,
+      "longitude": 39.1044,
+      "revenue": 62.0,
+      "legCarbonKg": 1131096.9
+    },
+    {
+      "key": "shanghai",
+      "round": 6,
+      "week": 17,
+      "month": 4,
+      "region": "APAC",
+      "grandPrix": "Chinese Grand Prix",
+      "city": "Shanghai",
+      "name": "Shanghai Intl",
+      "latitude": 31.3389,
+      "longitude": 121.22,
+      "revenue": 75.4,
+      "legCarbonKg": 5643446.6
+    },
+    {
+      "key": "suzuka",
+      "round": 7,
+      "week": 19,
+      "month": 5,
+      "region": "APAC",
+      "grandPrix": "Japanese Grand Prix",
+      "city": "Suzuka",
+      "name": "Suzuka",
+      "latitude": 34.8431,
+      "longitude": 136.541,
+      "revenue": 82.0,
+      "legCarbonKg": 1034468.2
+    },
+    {
+      "key": "melbourne",
+      "round": 8,
+      "week": 21,
+      "month": 5,
+      "region": "APAC",
+      "grandPrix": "Australian Grand Prix",
+      "city": "Melbourne",
+      "name": "Albert Park",
+      "latitude": -37.8497,
+      "longitude": 144.968,
+      "revenue": 80.0,
+      "legCarbonKg": 5690796.1
+    },
+    {
+      "key": "singapore",
+      "round": 9,
+      "week": 23,
+      "month": 6,
+      "region": "APAC",
+      "grandPrix": "Singapore Grand Prix",
+      "city": "Singapore",
+      "name": "Marina Bay",
+      "latitude": 1.2914,
+      "longitude": 103.864,
+      "revenue": 90.0,
+      "legCarbonKg": 4240377.0
+    },
+    {
+      "key": "barcelona",
+      "round": 10,
+      "week": 24,
+      "month": 6,
+      "region": "EUROPE",
+      "grandPrix": "Spanish Grand Prix",
+      "city": "Barcelona",
+      "name": "Catalunya",
+      "latitude": 41.57,
+      "longitude": 2.2611,
+      "revenue": 88.4,
+      "legCarbonKg": 7611345.1
+    },
+    {
+      "key": "zandvoort",
+      "round": 11,
+      "week": 26,
+      "month": 6,
+      "region": "EUROPE",
+      "grandPrix": "Dutch Grand Prix",
+      "city": "Zandvoort",
+      "name": "Zandvoort",
+      "latitude": 52.3888,
+      "longitude": 4.5409,
+      "revenue": 78.0,
+      "legCarbonKg": 850640.8
+    },
+    {
+      "key": "silverstone",
+      "round": 12,
+      "week": 28,
+      "month": 7,
+      "region": "EUROPE",
+      "grandPrix": "British Grand Prix",
+      "city": "Silverstone",
+      "name": "Silverstone",
+      "latitude": 52.0786,
+      "longitude": -1.0169,
+      "revenue": 123.5,
+      "legCarbonKg": 265973.5
+    },
+    {
+      "key": "monza",
+      "round": 13,
+      "week": 30,
+      "month": 7,
+      "region": "EUROPE",
+      "grandPrix": "Italian Grand Prix",
+      "city": "Monza",
+      "name": "Monza",
+      "latitude": 45.6156,
+      "longitude": 9.2811,
+      "revenue": 92.0,
+      "legCarbonKg": 727616.3
+    },
+    {
+      "key": "spielberg",
+      "round": 14,
+      "week": 33,
+      "month": 8,
+      "region": "EUROPE",
+      "grandPrix": "Austrian Grand Prix",
+      "city": "Spielberg",
+      "name": "Red Bull Ring",
+      "latitude": 47.2197,
+      "longitude": 14.7647,
+      "revenue": 66.0,
+      "legCarbonKg": 319552.7
+    },
+    {
+      "key": "monaco",
+      "round": 15,
+      "week": 34,
+      "month": 8,
+      "region": "EUROPE",
+      "grandPrix": "Monaco Grand Prix",
+      "city": "Monte Carlo",
+      "name": "Circuit de Monaco",
+      "latitude": 43.7347,
+      "longitude": 7.4206,
+      "revenue": 100.0,
+      "legCarbonKg": 483664.0
+    },
+    {
+      "key": "spa",
+      "round": 16,
+      "week": 35,
+      "month": 8,
+      "region": "EUROPE",
+      "grandPrix": "Belgian Grand Prix",
+      "city": "Stavelot",
+      "name": "Spa-Francorchamps",
+      "latitude": 50.4372,
+      "longitude": 5.9714,
+      "revenue": 104.0,
+      "legCarbonKg": 527293.6
+    },
+    {
+      "key": "madrid",
+      "round": 17,
+      "week": 37,
+      "month": 9,
+      "region": "EUROPE",
+      "grandPrix": "Madrid Grand Prix",
+      "city": "Madrid",
+      "name": "Madring (IFEMA)",
+      "latitude": 40.465,
+      "longitude": -3.616,
+      "revenue": 91.0,
+      "legCarbonKg": 934549.8
+    },
+    {
+      "key": "budapest",
+      "round": 18,
+      "week": 39,
+      "month": 9,
+      "region": "EUROPE",
+      "grandPrix": "Hungarian Grand Prix",
+      "city": "Budapest",
+      "name": "Hungaroring",
+      "latitude": 47.5789,
+      "longitude": 19.2486,
+      "revenue": 65.0,
+      "legCarbonKg": 1387722.5
+    },
+    {
+      "key": "mexico_city",
+      "round": 19,
+      "week": 41,
+      "month": 10,
+      "region": "AMERICAS",
+      "grandPrix": "Mexico City Grand Prix",
+      "city": "Mexico City",
+      "name": "Hermanos Rodriguez",
+      "latitude": 19.4042,
+      "longitude": -99.0907,
+      "revenue": 104.0,
+      "legCarbonKg": 7258600.8
+    },
+    {
+      "key": "montreal",
+      "round": 20,
+      "week": 43,
+      "month": 10,
+      "region": "AMERICAS",
+      "grandPrix": "Canadian Grand Prix",
+      "city": "Montreal",
+      "name": "Gilles Villeneuve",
+      "latitude": 45.5,
+      "longitude": -73.5228,
+      "revenue": 72.0,
+      "legCarbonKg": 2612076.5
+    },
+    {
+      "key": "austin",
+      "round": 21,
+      "week": 45,
+      "month": 11,
+      "region": "AMERICAS",
+      "grandPrix": "United States Grand Prix",
+      "city": "Austin",
+      "name": "Circuit of Americas",
+      "latitude": 30.1328,
+      "longitude": -97.6411,
+      "revenue": 110.5,
+      "legCarbonKg": 1892230.3
+    },
+    {
+      "key": "las_vegas",
+      "round": 22,
+      "week": 46,
+      "month": 11,
+      "region": "AMERICAS",
+      "grandPrix": "Las Vegas Grand Prix",
+      "city": "Las Vegas",
+      "name": "Las Vegas Strip",
+      "latitude": 36.1147,
+      "longitude": -115.1728,
+      "revenue": 123.5,
+      "legCarbonKg": 1231715.7
+    },
+    {
+      "key": "sao_paulo",
+      "round": 23,
+      "week": 48,
+      "month": 11,
+      "region": "AMERICAS",
+      "grandPrix": "S\u00e3o Paulo Grand Prix",
+      "city": "Sao Paulo",
+      "name": "Interlagos",
+      "latitude": -23.7036,
+      "longitude": -46.6997,
+      "revenue": 110.5,
+      "legCarbonKg": 6851497.4
+    },
+    {
+      "key": "miami",
+      "round": 24,
+      "week": 50,
+      "month": 12,
+      "region": "AMERICAS",
+      "grandPrix": "Miami Grand Prix",
+      "city": "Miami",
+      "name": "Miami Intl Autodrome",
+      "latitude": 25.9581,
+      "longitude": -80.2389,
+      "revenue": 82.0,
+      "legCarbonKg": 4617309.7
+    }
+  ],
+  "legs": [
+    {
+      "from": "baku",
+      "to": "sakhir",
+      "distanceKm": 1595.7,
+      "carbonKg": 1116985.5
+    },
+    {
+      "from": "sakhir",
+      "to": "losail",
+      "distanceKm": 112.1,
+      "carbonKg": 78475.4
+    },
+    {
+      "from": "losail",
+      "to": "yas_marina",
+      "distanceKm": 337.1,
+      "carbonKg": 235997.5
+    },
+    {
+      "from": "yas_marina",
+      "to": "jeddah",
+      "distanceKm": 1615.9,
+      "carbonKg": 1131096.9
+    },
+    {
+      "from": "jeddah",
+      "to": "shanghai",
+      "distanceKm": 8062.1,
+      "carbonKg": 5643446.6
+    },
+    {
+      "from": "shanghai",
+      "to": "suzuka",
+      "distanceKm": 1477.8,
+      "carbonKg": 1034468.2
+    },
+    {
+      "from": "suzuka",
+      "to": "melbourne",
+      "distanceKm": 8129.7,
+      "carbonKg": 5690796.1
+    },
+    {
+      "from": "melbourne",
+      "to": "singapore",
+      "distanceKm": 6057.7,
+      "carbonKg": 4240377.0
+    },
+    {
+      "from": "singapore",
+      "to": "barcelona",
+      "distanceKm": 10873.4,
+      "carbonKg": 7611345.1
+    },
+    {
+      "from": "barcelona",
+      "to": "zandvoort",
+      "distanceKm": 1215.2,
+      "carbonKg": 850640.8
+    },
+    {
+      "from": "zandvoort",
+      "to": "silverstone",
+      "distanceKm": 380.0,
+      "carbonKg": 265973.5
+    },
+    {
+      "from": "silverstone",
+      "to": "monza",
+      "distanceKm": 1039.5,
+      "carbonKg": 727616.3
+    },
+    {
+      "from": "monza",
+      "to": "spielberg",
+      "distanceKm": 456.5,
+      "carbonKg": 319552.7
+    },
+    {
+      "from": "spielberg",
+      "to": "monaco",
+      "distanceKm": 690.9,
+      "carbonKg": 483664.0
+    },
+    {
+      "from": "monaco",
+      "to": "spa",
+      "distanceKm": 753.3,
+      "carbonKg": 527293.6
+    },
+    {
+      "from": "spa",
+      "to": "madrid",
+      "distanceKm": 1335.1,
+      "carbonKg": 934549.8
+    },
+    {
+      "from": "madrid",
+      "to": "budapest",
+      "distanceKm": 1982.5,
+      "carbonKg": 1387722.5
+    },
+    {
+      "from": "budapest",
+      "to": "mexico_city",
+      "distanceKm": 10369.4,
+      "carbonKg": 7258600.8
+    },
+    {
+      "from": "mexico_city",
+      "to": "montreal",
+      "distanceKm": 3731.5,
+      "carbonKg": 2612076.5
+    },
+    {
+      "from": "montreal",
+      "to": "austin",
+      "distanceKm": 2703.2,
+      "carbonKg": 1892230.3
+    },
+    {
+      "from": "austin",
+      "to": "las_vegas",
+      "distanceKm": 1759.6,
+      "carbonKg": 1231715.7
+    },
+    {
+      "from": "las_vegas",
+      "to": "sao_paulo",
+      "distanceKm": 9787.9,
+      "carbonKg": 6851497.4
+    },
+    {
+      "from": "sao_paulo",
+      "to": "miami",
+      "distanceKm": 6596.2,
+      "carbonKg": 4617309.7
+    }
+  ],
+  "comparison": {
+    "vsBaseline": {
+      "revenueDelta": 146.1,
+      "revenueDeltaPct": 7.7,
+      "carbonDeltaKg": 11663204.8,
+      "carbonDeltaPct": 25.9
+    }
+  }
+}
