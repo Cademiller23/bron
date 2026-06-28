@@ -1,0 +1,17 @@
+{
+  "instance_name": "mamo-ts-easy-01",
+  "category": "Easy",
+  "type": "TRANSSHIPMENT",
+  "graph": {
+    "vertices": [
+      {"name": "A", "role": "SOURCE", "available": 10.0},
+      {"name": "T", "role": "TRANSSHIPMENT"},
+      {"name": "B", "role": "SINK", "required": 8.0}
+    ],
+    "edges": [
+      {"name": "A-T", "tail": "A", "head": "T", "unit_cost": 1.0, "lead_time": 2.0},
+      {"name": "T-B", "tail": "T", "head": "B", "unit_cost": 1.0, "lead_time": 2.0}
+    ]
+  },
+  "optimal_value": 16.0
+}

@@ -1,0 +1,129 @@
+"""The ModelRegistry — maps ``model_id`` → provider / endpoint / profile.
+
+This is the single source of truth the model-agnostic client dispatches on and
+that B7's router + cost/latency penalty read. B2 seeds exactly one entry
+(``gemini-3.5-flash``); B7 adds the DigitalOcean-hosted fleet (MAX, MiniMax, …)
+behind the same ``ModelEntry`` shape — a config change, not a code change.
+"""
+
+from enum import Enum
+from typing import Dict, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from darwin.constants import DEFAULT_MODEL_ID
+
+
+class Provider(str, Enum):
+    GEMINI = "GEMINI"
+    OPENAI_COMPAT = "OPENAI_COMPAT"
+
+
+class CapabilityTier(str, Enum):
+    CHEAP = "CHEAP"
+    MID = "MID"
+    FRONTIER = "FRONTIER"
+
+
+class ModelEntry(BaseModel):
+    """One registered model. Frozen; the registry swaps entries to mutate state."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_id: str = Field(min_length=1)
+    provider: Provider
+    endpoint: str = ""  # base_url for OPENAI_COMPAT; "" for the native Gemini SDK
+    capability_tier: CapabilityTier = CapabilityTier.MID
+    est_cost_per_1k_in: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    est_cost_per_1k_out: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    est_latency_ms: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    supports_native_schema: bool = False
+    # Circuit-breaker state (§10): the router (B7) routes around degraded models.
+    degraded: bool = False
+
+
+class ModelRegistry:
+    """Mutable container of :class:`ModelEntry` keyed by ``model_id``."""
+
+    def __init__(self, entries: Optional[Dict[str, ModelEntry]] = None) -> None:
+        self._entries: Dict[str, ModelEntry] = dict(entries or {})
+
+    def register(self, entry: ModelEntry) -> None:
+        self._entries[entry.model_id] = entry
+
+    def contains(self, model_id: str) -> bool:
+        return model_id in self._entries
+
+    def get(self, model_id: str) -> ModelEntry:
+        try:
+            return self._entries[model_id]
+        except KeyError:
+            raise KeyError(
+                f"unknown model_id {model_id!r}; registered: {sorted(self._entries)}"
+            ) from None
+
+    def all_ids(self) -> "list[str]":
+        return sorted(self._entries)
+
+    def set_degraded(self, model_id: str, degraded: bool = True) -> None:
+        entry = self.get(model_id)
+        self._entries[model_id] = entry.model_copy(update={"degraded": degraded})
+
+    def is_degraded(self, model_id: str) -> bool:
+        return self.get(model_id).degraded
+
+    def estimate_cost(self, model_id: str, tokens_in: int, tokens_out: int) -> float:
+        entry = self.get(model_id)
+        return (
+            (tokens_in / 1000.0) * entry.est_cost_per_1k_in
+            + (tokens_out / 1000.0) * entry.est_cost_per_1k_out
+        )
+
+
+# ---------------------------------------------------------------------------
+# The seed registry: one entry, the first concrete model. B7 extends it.
+# ---------------------------------------------------------------------------
+def _seed_entries() -> Dict[str, ModelEntry]:
+    return {
+        # The fast execution model — the many team-member calls run on this.
+        DEFAULT_MODEL_ID: ModelEntry(
+            model_id=DEFAULT_MODEL_ID,
+            provider=Provider.GEMINI,
+            endpoint="",
+            capability_tier=CapabilityTier.MID,
+            est_cost_per_1k_in=0.00015,
+            est_cost_per_1k_out=0.0006,
+            est_latency_ms=900.0,
+            supports_native_schema=True,
+        ),
+        # The frontier reasoner — the Architect (B4) designs teams on this, and
+        # deep-reasoning roles (the arbitrator) are assigned to it.
+        "gemini-3.1-pro": ModelEntry(
+            model_id="gemini-3.1-pro",
+            provider=Provider.GEMINI,
+            endpoint="",
+            capability_tier=CapabilityTier.FRONTIER,
+            est_cost_per_1k_in=0.00125,
+            est_cost_per_1k_out=0.005,
+            est_latency_ms=2600.0,
+            supports_native_schema=True,
+        ),
+    }
+
+
+_DEFAULT_REGISTRY: Optional[ModelRegistry] = None
+
+
+def default_registry() -> ModelRegistry:
+    """The process-wide registry AgentSpec validates against and the worker uses
+    by default. B7 extends this singleton with the hosted fleet."""
+    global _DEFAULT_REGISTRY
+    if _DEFAULT_REGISTRY is None:
+        _DEFAULT_REGISTRY = ModelRegistry(_seed_entries())
+    return _DEFAULT_REGISTRY
+
+
+def reset_default_registry() -> None:
+    """Test hook: restore the seed registry."""
+    global _DEFAULT_REGISTRY
+    _DEFAULT_REGISTRY = ModelRegistry(_seed_entries())

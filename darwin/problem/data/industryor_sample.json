@@ -1,0 +1,20 @@
+{
+  "id": "industryor-tp-0001",
+  "difficulty": "EASY",
+  "problem_class": "TRANSPORTATION",
+  "nodes": [
+    {"id": "S1", "type": "SOURCE", "supply": 10.0, "risk": 0.1},
+    {"id": "S2", "type": "SOURCE", "supply": 10.0, "risk": 0.4},
+    {"id": "D1", "type": "SINK", "demand": 8.0},
+    {"id": "D2", "type": "SINK", "demand": 7.0}
+  ],
+  "arcs": [
+    {"id": "S1-D1", "from": "S1", "to": "D1", "cost": 2.0, "lead_time": 3.0, "risk": 0.1},
+    {"id": "S1-D2", "from": "S1", "to": "D2", "cost": 3.0, "lead_time": 2.0, "risk": 0.2},
+    {"id": "S2-D1", "from": "S2", "to": "D1", "cost": 5.0, "lead_time": 1.0, "risk": 0.5},
+    {"id": "S2-D2", "from": "S2", "to": "D2", "cost": 1.0, "lead_time": 4.0, "risk": 0.3}
+  ],
+  "constraints": [],
+  "labeled_optimum": 23.0,
+  "notes": "Synthetic IndustryOR-format 2x2 transportation problem."
+}

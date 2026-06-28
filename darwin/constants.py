@@ -1,0 +1,68 @@
+"""Cross-phase Darwin constants.
+
+Kept in one place so every phase reads the same source of truth. ``SCORE_THRESHOLD``
+is consumed by B6's escalation gate; B2 is *designed knowing* the bar is a
+demanding 0.90 of the verified optimum, so worker structured-output reliability
+matters.
+"""
+
+# --- B6 escalation gate (the bar a team's scored solution must clear) --------
+# Raised from the old x<50 placeholder to a deliberately high 90% of optimum.
+SCORE_THRESHOLD: float = 0.90
+
+# --- B2 worker pipeline ------------------------------------------------------
+DEFAULT_MODEL_ID: str = "gemini-3.5-flash"
+MAX_REPAIRS: int = 2  # bounded Reflexion-at-the-atom; never an unbounded loop
+DEFAULT_TIMEOUT_S: float = 30.0
+DEFAULT_MAX_OUTPUT_TOKENS: int = 2048
+
+# --- ModelClient resilience (§10) -------------------------------------------
+MAX_API_RETRIES: int = 3  # bounded retries for 429 / 5xx
+RETRY_BASE_DELAY_S: float = 0.5  # exponential backoff base
+CIRCUIT_BREAKER_THRESHOLD: int = 5  # consecutive failures before a model_id is marked degraded
+
+# Truncation cap for the raw_output stored in telemetry.
+TELEMETRY_RAW_OUTPUT_MAX_CHARS: int = 8000
+
+# --- B3 team runner ----------------------------------------------------------
+# Global ceiling on in-flight model calls across the ENTIRE swarm (every concurrent
+# genome evaluation in B5 shares one semaphore). Sized to the inference layer's real
+# safe-concurrency knee; start conservative and tune against the saturation test.
+MAX_CONCURRENT_INFERENCE: int = 12
+
+# Runner-level whole-arbiter retry budget (on top of B2's internal repair ladder).
+ARBITER_MAX_RETRIES: int = 2  # => up to 3 attempts total (PRIMARY + 2 RETRY)
+
+# Non-arbiter agent: retry once, then route around.
+AGENT_MAX_RETRIES: int = 1
+
+# Optimistic-lock reload-and-retry budget for store.retry_mutate.
+MUTATE_MAX_ATTEMPTS: int = 5
+
+# The floor fitness assigned to an errored/sentinel genome (strictly < any feasible
+# score, which the B1 scorer keeps in [0, 1]). Mirrors B1's infeasible-floor scale.
+GENOME_FLOOR_FITNESS: float = -1.0e12
+
+# --- B4 Architect ------------------------------------------------------------
+# The frontier reasoner the Architect itself runs on (rare, hard design calls).
+ARCHITECT_MODEL_ID: str = "gemini-3.1-pro"
+# The fast model the authored agents execute on (the many calls).
+FAST_MODEL_ID: str = DEFAULT_MODEL_ID  # "gemini-3.5-flash"
+MAX_DESIGN_REPAIRS: int = 2  # bounded design validation-repair loop
+
+# --- B5 Rearrangement loop ---------------------------------------------------
+REARRANGE_K: int = 5  # candidates generated per round (small: fast + legible)
+REARRANGE_PATIENCE: int = 2  # stop after this many no-improve rounds
+REARRANGE_MAX_ITERS: int = 8  # hard iteration budget (demo-bounded)
+REARRANGE_CEILING: float = 0.99  # stop when near-optimal
+REARRANGE_EPSILON: float = 1e-9  # min strict improvement to adopt (elitism)
+
+# --- B6 escalation + conductor ----------------------------------------------
+CORPUS_SEARCH_K: int = 5  # top-k corpus candidates to consider
+CORPUS_SIM_THRESHOLD: float = 0.45  # min cosine similarity for a corpus entry to be usable
+ESCALATION_EPSILON: float = 1e-9  # min round improvement to keep an added agent (team-growth elitism)
+# SolveBudget defaults (the conductor stops escalating when any is hit).
+MAX_ESCALATIONS: int = 5
+MAX_TEAM_SIZE: int = 8
+MAX_WALL_CLOCK_SECONDS: float = 120.0
+MAX_TOTAL_COST_USD: float = 5.0
